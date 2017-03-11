@@ -78,8 +78,7 @@ func ruleSetToRules(set Ruleset) ToHTTPS {
 }
 
 func (h *https) ToHTTPS(urlStr string) (string, bool) {
-	u, err := url.Parse(urlStr)
-	domain := stripPort(u.Host)
+	domain, err := h.parseDomain(urlStr)
 	h.log.Debugf("Got domain: %s", domain)
 	if err != nil {
 		return urlStr, false
@@ -91,7 +90,38 @@ func (h *https) ToHTTPS(urlStr string) (string, bool) {
 		h.log.Debugf("Got rules: %+v", rules)
 		return rules.ToHTTPS(urlStr)
 	}
+
+	if rules, ok := h.targets["*."+domain]; ok {
+		h.log.Debugf("Got rules: %+v", rules)
+		return rules.ToHTTPS(urlStr)
+	}
+
+	if rules, ok := h.targets[stripTLD(domain)+"*"]; ok {
+		h.log.Debugf("Got suffix rules: %+v", rules)
+		return rules.ToHTTPS(urlStr)
+	}
 	return urlStr, false
+}
+
+func (h *https) parseDomain(urlStr string) (string, error) {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		log.Errorf("Could not parse domain %v", err)
+		return "", err
+	}
+	domain := stripPort(u.Host)
+	return stripSubdomains(domain), nil
+}
+
+func stripSubdomains(hostport string) string {
+	dot := strings.IndexByte(hostport, '.')
+	if dot == -1 {
+		return hostport
+	} else if len(hostport)-dot < 5 {
+		return hostport
+	}
+	dot++
+	return stripSubdomains(hostport[dot:])
 }
 
 func stripPort(hostport string) string {
@@ -103,4 +133,13 @@ func stripPort(hostport string) string {
 		return strings.TrimPrefix(hostport[:i], "[")
 	}
 	return hostport[:colon]
+}
+
+func stripTLD(domain string) string {
+	dot := strings.IndexByte(domain, '.')
+	if dot == -1 {
+		return domain
+	}
+	dot++
+	return domain[:dot]
 }
