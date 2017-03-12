@@ -7,9 +7,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Yawning/obfs4/common/log"
 	"github.com/getlantern/golog"
 )
+
+var log = golog.LoggerFor("httpseverywhere")
 
 // ToHTTPS changes an HTTP URL to HTTPS.
 type ToHTTPS interface {
@@ -41,7 +42,6 @@ func (r *rules) ToHTTPS(url string) (string, bool) {
 }
 
 func NewHTTPS(rules string) ToHTTPS {
-	log := golog.LoggerFor("httpseverywhere")
 
 	targets := make(map[string]ToHTTPS)
 	addRuleSet(rules, targets)
@@ -71,6 +71,8 @@ func addRuleSet(rules string, targets map[string]ToHTTPS) {
 func ruleSetToRules(set Ruleset) ToHTTPS {
 	mod := make([]*rule, len(set.Rule))
 	for i, r := range set.Rule {
+		// Precompile the regex to make things faster when actually processing
+		// rules for live traffic.
 		f := regexp.MustCompile(r.From)
 		mod[i] = &rule{rx: f, to: r.To}
 	}
@@ -78,7 +80,13 @@ func ruleSetToRules(set Ruleset) ToHTTPS {
 }
 
 func (h *https) ToHTTPS(urlStr string) (string, bool) {
-	domain, err := h.parseDomain(urlStr)
+	//domain, err := h.parseDomain(urlStr)
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		log.Errorf("Could not parse domain %v", err)
+		return urlStr, false
+	}
+	domain := stripPort(u.Host)
 	h.log.Debugf("Got domain: %s", domain)
 	if err != nil {
 		return urlStr, false
@@ -90,27 +98,15 @@ func (h *https) ToHTTPS(urlStr string) (string, bool) {
 		h.log.Debugf("Got rules: %+v", rules)
 		return rules.ToHTTPS(urlStr)
 	}
-
-	if rules, ok := h.targets["*."+domain]; ok {
-		h.log.Debugf("Got rules: %+v", rules)
-		return rules.ToHTTPS(urlStr)
-	}
-
 	if rules, ok := h.targets[stripTLD(domain)+"*"]; ok {
 		h.log.Debugf("Got suffix rules: %+v", rules)
 		return rules.ToHTTPS(urlStr)
 	}
-	return urlStr, false
-}
-
-func (h *https) parseDomain(urlStr string) (string, error) {
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		log.Errorf("Could not parse domain %v", err)
-		return "", err
+	if rules, ok := h.targets["*."+stripSubdomains(domain)]; ok {
+		h.log.Debugf("Got rules: %+v", rules)
+		return rules.ToHTTPS(urlStr)
 	}
-	domain := stripPort(u.Host)
-	return stripSubdomains(domain), nil
+	return urlStr, false
 }
 
 func stripSubdomains(hostport string) string {
@@ -136,6 +132,7 @@ func stripPort(hostport string) string {
 }
 
 func stripTLD(domain string) string {
+	// Note the domain here is already stripped of all subdomains.
 	dot := strings.IndexByte(domain, '.')
 	if dot == -1 {
 		return domain

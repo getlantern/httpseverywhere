@@ -4,9 +4,36 @@ import (
 	"testing"
 
 	//"github.com/Sirupsen/logrus"
+	//"github.com/Yawning/obfs4/common/log"
 	"github.com/getlantern/golog"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestMultipleTargets(t *testing.T) {
+	log := golog.LoggerFor("httpseverywhere_test")
+	var testRule = `<ruleset name="RabbitMQ">
+        <target host="rabbitmq.com" />
+        <target host="www.rabbitmq.com" />
+
+        <rule from="^http:"
+                to="https:" />
+</ruleset>`
+
+	h := NewHTTPS(testRule)
+	base := "http://rabbitmq.com"
+	r, mod := h.ToHTTPS(base)
+
+	log.Debugf("New: %v", r)
+	assert.True(t, mod, "should have been modified to https")
+	assert.Equal(t, "https://rabbitmq.com", r)
+
+	base = "http://www.rabbitmq.com"
+	r, mod = h.ToHTTPS(base)
+
+	log.Debugf("New: %v", r)
+	assert.True(t, mod, "should have been modified to https")
+	assert.Equal(t, "https://www.rabbitmq.com", r)
+}
 
 func TestRedirect(t *testing.T) {
 	log := golog.LoggerFor("httpseverywhere_test")
