@@ -4,10 +4,27 @@ import (
 	"testing"
 
 	//"github.com/Sirupsen/logrus"
-	//"github.com/Yawning/obfs4/common/log"
+
 	"github.com/getlantern/golog"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestComplex(t *testing.T) {
+	log := golog.LoggerFor("httpseverywhere_test")
+	var testRule = `<ruleset name="Wikipedia">
+  <target host="*.wikipedia.org" />
+
+  <rule from="^http://(\w{2})\.wikipedia\.org/wiki/"
+          to="https://secure.wikimedia.org/wikipedia/$1/wiki/"/>
+</ruleset>`
+	h := NewHTTPS(testRule)
+	base := "http://fr.wikipedia.org/wiki/Chose"
+	r, mod := h.ToHTTPS(base)
+
+	log.Debugf("New: %v", r)
+	assert.True(t, mod, "should have been modified to https")
+	assert.Equal(t, "https://secure.wikimedia.org/wikipedia/fr/wiki/Chose", r)
+}
 
 func TestMultipleTargets(t *testing.T) {
 	log := golog.LoggerFor("httpseverywhere_test")

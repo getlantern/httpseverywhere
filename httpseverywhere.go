@@ -2,7 +2,6 @@ package httpseverywhere
 
 import (
 	"encoding/xml"
-	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -37,6 +36,7 @@ func (r *rules) ToHTTPS(url string) (string, bool) {
 		if match {
 			return rule.rx.ReplaceAllString(url, rule.to), true
 		}
+		log.Debugf("Rule %v did not match string: %v", rule.rx.String(), url)
 	}
 	return url, false
 }
@@ -62,10 +62,7 @@ func addRuleSet(rules string, targets map[string]ToHTTPS) {
 		targets[target.Host] = rs
 	}
 
-	//fmt.Println(r.Ruleset)
 	log.Debugf("targets: %+v", targets)
-	//log.Debugf("Name: %+v", r.Name)
-	fmt.Printf("Target: %v\n", r.Target)
 }
 
 func ruleSetToRules(set Ruleset) ToHTTPS {
