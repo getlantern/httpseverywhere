@@ -42,7 +42,6 @@ func (r *rules) ToHTTPS(url string) (string, bool) {
 }
 
 func NewHTTPS(rules string) ToHTTPS {
-
 	targets := make(map[string]ToHTTPS)
 	addRuleSet(rules, targets)
 	return &https{log: log, targets: targets}
@@ -52,6 +51,10 @@ func addRuleSet(rules string, targets map[string]ToHTTPS) {
 	b := []byte(rules)
 	var r Ruleset
 	xml.Unmarshal(b, &r)
+	log.Debugf("OFF: '%v'", r.Off)
+	if len(r.Off) > 0 {
+		return
+	}
 
 	rs := ruleSetToRules(r)
 

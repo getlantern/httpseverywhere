@@ -9,6 +9,33 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestDefaultOff(t *testing.T) {
+	log := golog.LoggerFor("httpseverywhere_test")
+	var testRule = `<ruleset name="RabbitMQ" default_off="just cuz">
+        <target host="rabbitmq.com" />
+        <target host="www.rabbitmq.com" />
+
+        <rule from="^http:"
+                to="https:" />
+</ruleset>`
+
+	h := NewHTTPS(testRule)
+	base := "http://rabbitmq.com"
+	r, mod := h.ToHTTPS(base)
+
+	log.Debugf("New: %v", r)
+	assert.False(t, mod, "should NOT have been modified to https")
+	assert.Equal(t, "http://rabbitmq.com", r)
+
+	base = "http://www.rabbitmq.com"
+	r, mod = h.ToHTTPS(base)
+
+	log.Debugf("New: %v", r)
+	assert.False(t, mod, "should NOT have been modified to https")
+	assert.Equal(t, "http://www.rabbitmq.com", r)
+
+}
+
 func TestComplex(t *testing.T) {
 	log := golog.LoggerFor("httpseverywhere_test")
 	var testRule = `<ruleset name="Wikipedia">
