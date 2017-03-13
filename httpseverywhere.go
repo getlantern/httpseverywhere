@@ -69,6 +69,12 @@ func addRuleSet(rules string, targets map[string]ToHTTPS) {
 		return
 	}
 
+	// We don't run on any platforms (aka Tor) that support mixed content, so
+	// ignore any rule that is mixedcontent-only.
+	if r.Platform == "mixedcontent" {
+		return
+	}
+
 	rs := ruleSetToRules(r)
 
 	for _, target := range r.Target {

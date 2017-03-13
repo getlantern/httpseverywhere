@@ -9,6 +9,34 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Test for the mixed content flag. Because we don't run on any platform that
+// supports mixed content, the flag essentially means the rule is turned off.
+func TestMixedContent(t *testing.T) {
+	log := golog.LoggerFor("httpseverywhere_test")
+	var testRule = `<ruleset name="RabbitMQ" platform="mixedcontent">
+        <target host="rabbitmq.com" />
+        <target host="www.rabbitmq.com" />
+
+        <rule from="^http:"
+                to="https:" />
+</ruleset>`
+
+	h := NewHTTPS(testRule)
+	base := "http://rabbitmq.com"
+	r, mod := h.ToHTTPS(base)
+
+	log.Debugf("New: %v", r)
+	assert.False(t, mod, "should NOT have been modified to https")
+	assert.Equal(t, "http://rabbitmq.com", r)
+
+	base = "http://www.rabbitmq.com"
+	r, mod = h.ToHTTPS(base)
+
+	log.Debugf("New: %v", r)
+	assert.False(t, mod, "should NOT have been modified to https")
+	assert.Equal(t, "http://www.rabbitmq.com", r)
+}
+
 func TestExclusions(t *testing.T) {
 	log := golog.LoggerFor("httpseverywhere_test")
 	var testRule = `<ruleset name="SO">

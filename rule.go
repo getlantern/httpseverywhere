@@ -36,6 +36,7 @@ type Rule struct {
 
 type Ruleset struct {
 	Off       string      `xml:"default_off,attr"`
+	Platform  string      `xml:"platform,attr"`
 	Target    []Target    `xml:"target"`
 	Exclusion []Exclusion `xml:"exclusion"`
 	Rule      []Rule      `xml:"rule"`
