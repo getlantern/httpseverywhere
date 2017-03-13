@@ -9,6 +9,26 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestExclusions(t *testing.T) {
+	log := golog.LoggerFor("httpseverywhere_test")
+	var testRule = `<ruleset name="SO">
+
+				<target host="stackoverflow.com" />
+
+				<exclusion pattern="^http://(?:\w+\.)?stack(?:exchange|overflow)\.com/users/authenticate/" />
+				<rule from="^http:"
+								to="https:" />
+</ruleset>`
+
+	h := NewHTTPS(testRule)
+	base := "http://stackoverflow.com/users/authenticate/"
+	r, mod := h.ToHTTPS(base)
+
+	log.Debugf("New: %v", r)
+	assert.False(t, mod, "should NOT have been modified to https")
+	assert.Equal(t, "http://stackoverflow.com/users/authenticate/", r)
+}
+
 func TestDefaultOff(t *testing.T) {
 	log := golog.LoggerFor("httpseverywhere_test")
 	var testRule = `<ruleset name="RabbitMQ" default_off="just cuz">

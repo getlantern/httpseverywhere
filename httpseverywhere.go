@@ -26,11 +26,23 @@ type rule struct {
 	to string
 }
 
+type exclusion struct {
+	pattern *regexp.Regexp
+}
+
 type rules struct {
-	rules []*rule
+	rules      []*rule
+	exclusions []*exclusion
 }
 
 func (r *rules) ToHTTPS(url string) (string, bool) {
+	for _, exclude := range r.exclusions {
+		match := exclude.pattern.MatchString(url)
+		if match {
+			return url, false
+		}
+		log.Debugf("Rule %v did not match string: %v", exclude.pattern.String(), url)
+	}
 	for _, rule := range r.rules {
 		match := rule.rx.MatchString(url)
 		if match {
@@ -51,7 +63,8 @@ func addRuleSet(rules string, targets map[string]ToHTTPS) {
 	b := []byte(rules)
 	var r Ruleset
 	xml.Unmarshal(b, &r)
-	log.Debugf("OFF: '%v'", r.Off)
+
+	// If the rule is turned off, ignore it.
 	if len(r.Off) > 0 {
 		return
 	}
@@ -76,7 +89,12 @@ func ruleSetToRules(set Ruleset) ToHTTPS {
 		f := regexp.MustCompile(r.From)
 		mod[i] = &rule{rx: f, to: r.To}
 	}
-	return &rules{rules: mod}
+	exclude := make([]*exclusion, len(set.Exclusion))
+	for i, e := range set.Exclusion {
+		p := regexp.MustCompile(e.Pattern)
+		exclude[i] = &exclusion{pattern: p}
+	}
+	return &rules{rules: mod, exclusions: exclude}
 }
 
 func (h *https) ToHTTPS(urlStr string) (string, bool) {

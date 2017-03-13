@@ -25,13 +25,18 @@ type Target struct {
 	Host string `xml:"host,attr"`
 }
 
+type Exclusion struct {
+	Pattern string `xml:"pattern,attr"`
+}
+
 type Rule struct {
 	From string `xml:"from,attr"`
 	To   string `xml:"to,attr"`
 }
 
 type Ruleset struct {
-	Off    string   `xml:"default_off,attr"`
-	Target []Target `xml:"target"`
-	Rule   []Rule   `xml:"rule"`
+	Off       string      `xml:"default_off,attr"`
+	Target    []Target    `xml:"target"`
+	Exclusion []Exclusion `xml:"exclusion"`
+	Rule      []Rule      `xml:"rule"`
 }
