@@ -46,13 +46,12 @@ func (r *rules) ToHTTPS(url string) (string, bool) {
 	for _, rule := range r.rules {
 		if rule.from.MatchString(url) {
 			return rule.from.ReplaceAllString(url, rule.to), true
-		} else {
-			//log.Debugf("No match")
 		}
 	}
 	return url, false
 }
 
+// AddAllRules adds all of the rules in the specified directory.
 func AddAllRules(dir string) ToHTTPS {
 	targets := make(map[string]ToHTTPS)
 	files, err := ioutil.ReadDir(dir)
@@ -76,6 +75,7 @@ func AddAllRules(dir string) ToHTTPS {
 	return &https{log: log, targets: targets}
 }
 
+// NewHTTPS creates a new ToHTTPS instance from a single rule set string.
 func NewHTTPS(rules string) ToHTTPS {
 	targets := make(map[string]ToHTTPS)
 	addRuleSet([]byte(rules), targets)
@@ -103,8 +103,6 @@ func addRuleSet(rules []byte, targets map[string]ToHTTPS) bool {
 	}
 
 	for _, target := range r.Target {
-		// TODO: If this is a wildcard domain, add a flag to the base domain to
-		// signify to check for either a LEADING or a TRAILING wildcard.
 		targets[target.Host] = rs
 	}
 	return true

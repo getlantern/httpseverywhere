@@ -11,7 +11,7 @@ import (
 )
 
 func TestAddAllRules(t *testing.T) {
-	h := AddAllRules("./rules")
+	h := AddAllRules("./testrules")
 
 	base := "http://name.com"
 	r, mod := h.ToHTTPS(base)
