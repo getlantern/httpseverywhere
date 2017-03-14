@@ -5,9 +5,9 @@ import (
 	"io/ioutil"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 
-	pcre "github.com/GRbit/go-pcre"
 	"github.com/getlantern/golog"
 )
 
@@ -24,12 +24,12 @@ type https struct {
 }
 
 type rule struct {
-	from *pcre.Regexp
+	from *regexp.Regexp
 	to   string
 }
 
 type exclusion struct {
-	pattern *pcre.Regexp
+	pattern *regexp.Regexp
 }
 
 type rules struct {
@@ -39,15 +39,13 @@ type rules struct {
 
 func (r *rules) ToHTTPS(url string) (string, bool) {
 	for _, exclude := range r.exclusions {
-		match := exclude.pattern.MatcherString(url, 0).Matches
-		if match {
+		if exclude.pattern.MatchString(url) {
 			return url, false
 		}
 	}
 	for _, rule := range r.rules {
-		match := rule.from.MatcherString(url, 0).Matches
-		if match {
-			return rule.from.ReplaceAllString(url, rule.to, 0), true
+		if rule.from.MatchString(url) {
+			return rule.from.ReplaceAllString(url, rule.to), true
 		} else {
 			//log.Debugf("No match")
 		}
@@ -62,16 +60,19 @@ func AddAllRules(dir string) ToHTTPS {
 		log.Fatal(err)
 	}
 
+	var errors int
 	for _, file := range files {
 		b, err := ioutil.ReadFile(filepath.Join(dir, file.Name()))
 		if err != nil {
 			log.Errorf("Error reading file: %v", err)
 		} else {
-			addRuleSet(b, targets)
+			if !addRuleSet(b, targets) {
+				errors++
+			}
 		}
 	}
 
-	log.Debugf("Loaded rules with %v targets", len(targets))
+	log.Debugf("Loaded rules with %v targets and %v errors", len(targets), errors)
 	return &https{log: log, targets: targets}
 }
 
@@ -81,31 +82,35 @@ func NewHTTPS(rules string) ToHTTPS {
 	return &https{log: log, targets: targets}
 }
 
-func addRuleSet(rules []byte, targets map[string]ToHTTPS) {
+func addRuleSet(rules []byte, targets map[string]ToHTTPS) bool {
 	var r Ruleset
 	xml.Unmarshal(rules, &r)
 
 	// If the rule is turned off, ignore it.
 	if len(r.Off) > 0 {
-		return
+		return false
 	}
 
 	// We don't run on any platforms (aka Tor) that support mixed content, so
 	// ignore any rule that is mixedcontent-only.
 	if r.Platform == "mixedcontent" {
-		return
+		return false
 	}
 
-	rs := ruleSetToRules(r)
+	rs, err := ruleSetToRules(r)
+	if err != nil {
+		return false
+	}
 
 	for _, target := range r.Target {
 		// TODO: If this is a wildcard domain, add a flag to the base domain to
 		// signify to check for either a LEADING or a TRAILING wildcard.
 		targets[target.Host] = rs
 	}
+	return true
 }
 
-func ruleSetToRules(set Ruleset) ToHTTPS {
+func ruleSetToRules(set Ruleset) (ToHTTPS, error) {
 	mod := make([]*rule, 0)
 	for _, r := range set.Rule {
 		// We ignore any rules that attempt to redirect to HTTP, as they would
@@ -114,23 +119,24 @@ func ruleSetToRules(set Ruleset) ToHTTPS {
 		if r.To == "http:" {
 			continue
 		}
-		f, err := pcre.Compile(r.From, 0)
+		f, err := regexp.Compile(r.From)
 		if err != nil {
 			log.Debugf("Could not compile regex: %v", err)
-		} else {
-			mod = append(mod, &rule{from: &f, to: r.To})
+			return nil, err
 		}
+		mod = append(mod, &rule{from: f, to: r.To})
+
 	}
 	exclude := make([]*exclusion, 0)
 	for _, e := range set.Exclusion {
-		p, err := pcre.Compile(e.Pattern, 0)
+		p, err := regexp.Compile(e.Pattern)
 		if err != nil {
 			log.Debugf("Could not compile regex for exclusion: %v", err)
-		} else {
-			exclude = append(exclude, &exclusion{pattern: &p})
+			return nil, err
 		}
+		exclude = append(exclude, &exclusion{pattern: p})
 	}
-	return &rules{rules: mod, exclusions: exclude}
+	return &rules{rules: mod, exclusions: exclude}, nil
 }
 
 func (h *https) ToHTTPS(urlStr string) (string, bool) {
