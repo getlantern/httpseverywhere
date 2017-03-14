@@ -1,6 +1,7 @@
 package httpseverywhere
 
 import (
+	"fmt"
 	"testing"
 
 	//"github.com/Sirupsen/logrus"
@@ -8,6 +9,33 @@ import (
 	"github.com/getlantern/golog"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestAddAllRules(t *testing.T) {
+	h := AddAllRules("./rules")
+
+	base := "http://name.com"
+	r, mod := h.ToHTTPS(base)
+
+	assert.True(t, mod, "should have been modified to https")
+	assert.Equal(t, "https://name.com", r)
+
+	base = "http://support.name.com"
+	r, mod = h.ToHTTPS(base)
+
+	assert.True(t, mod, "should have been modified to https")
+	assert.Equal(t, "https://support.name.com", r)
+}
+
+func BenchmarkAddAllRules(t *testing.B) {
+	//log := golog.LoggerFor("httpseverywhere_test")
+
+	AddAllRules("./testrules")
+}
+
+func main() {
+	br := testing.Benchmark(BenchmarkAddAllRules)
+	fmt.Println(br)
+}
 
 // Test for the mixed content flag. Because we don't run on any platform that
 // supports mixed content, the flag essentially means the rule is turned off.
@@ -37,8 +65,24 @@ func TestMixedContent(t *testing.T) {
 	assert.Equal(t, "http://www.rabbitmq.com", r)
 }
 
+func TestIgnoreHTTPRedirect(t *testing.T) {
+	var testRule = `<ruleset name="SO">
+
+				<target host="stackoverflow.com" />
+				<rule from="^https:"
+								to="http:" />
+</ruleset>`
+
+	h := NewHTTPS(testRule)
+	base := "https://stackoverflow.com/users/authenticate/"
+	r, mod := h.ToHTTPS(base)
+
+	assert.False(t, mod, "should NOT have been modified FROM https")
+	assert.Equal(t, "https://stackoverflow.com/users/authenticate/", r)
+
+}
+
 func TestExclusions(t *testing.T) {
-	log := golog.LoggerFor("httpseverywhere_test")
 	var testRule = `<ruleset name="SO">
 
 				<target host="stackoverflow.com" />
@@ -52,9 +96,22 @@ func TestExclusions(t *testing.T) {
 	base := "http://stackoverflow.com/users/authenticate/"
 	r, mod := h.ToHTTPS(base)
 
-	log.Debugf("New: %v", r)
 	assert.False(t, mod, "should NOT have been modified to https")
 	assert.Equal(t, "http://stackoverflow.com/users/authenticate/", r)
+
+	// Test when we don't match the exclusion string.
+	base = "http://stackoverflow.com/users/"
+	r, mod = h.ToHTTPS(base)
+
+	assert.True(t, mod, "should have been modified to https")
+	assert.Equal(t, "https://stackoverflow.com/users/", r)
+
+	// Test when we don't match the exclusion string or any rules
+	base = "https://stackoverflow.com/users/"
+	r, mod = h.ToHTTPS(base)
+
+	assert.False(t, mod, "already HTTPS")
+	assert.Equal(t, "https://stackoverflow.com/users/", r)
 }
 
 func TestDefaultOff(t *testing.T) {
@@ -150,8 +207,6 @@ func TestStripTLD(t *testing.T) {
 }
 
 func TestStripSubdomain(t *testing.T) {
-	log := golog.LoggerFor("httpseverywhere_test")
-
 	base := "subdomain.bundler.io"
 	stripped := stripSubdomains(base)
 	assert.Equal(t, "bundler.io", stripped)
@@ -163,25 +218,20 @@ func TestStripSubdomain(t *testing.T) {
 	base = "bundler.a.io"
 	stripped = stripSubdomains(base)
 
-	log.Debugf("Got: %v", stripped)
 	assert.Equal(t, "a.io", stripped)
 
 	base = "a.b.io"
 	stripped = stripSubdomains(base)
 
-	log.Debugf("Got: %v", stripped)
 	assert.Equal(t, "b.io", stripped)
 
 	base = "a.b.c.com"
 	stripped = stripSubdomains(base)
 
-	log.Debugf("Got: %v", stripped)
 	assert.Equal(t, "c.com", stripped)
 }
 
 func TestWildcardPrefix(t *testing.T) {
-	log := golog.LoggerFor("httpseverywhere_test")
-
 	var rule = `<ruleset name="Bundler.io">
 		<target host="*.bundler.io"/>
 		<rule from="^http:" to="https:" />
@@ -190,14 +240,11 @@ func TestWildcardPrefix(t *testing.T) {
 	base := "http://subdomain.bundler.io"
 	r, mod := h.ToHTTPS(base)
 
-	log.Debugf("New: %v", r)
 	assert.True(t, mod)
 	assert.Equal(t, "https://subdomain.bundler.io", r)
 }
 
 func TestWildcardSuffix(t *testing.T) {
-	log := golog.LoggerFor("httpseverywhere_test")
-
 	var rule = `<ruleset name="Bundler.io">
 		<target host="bundler.*"/>
 		<rule from="^http:" to="https:" />
@@ -206,7 +253,6 @@ func TestWildcardSuffix(t *testing.T) {
 	base := "http://bundler.io"
 	r, mod := h.ToHTTPS(base)
 
-	log.Debugf("New: %v", r)
 	assert.True(t, mod)
 	assert.Equal(t, "https://bundler.io", r)
 }

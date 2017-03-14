@@ -2,7 +2,9 @@ package httpseverywhere
 
 import (
 	"encoding/xml"
+	"io/ioutil"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -22,8 +24,8 @@ type https struct {
 }
 
 type rule struct {
-	rx *regexp.Regexp
-	to string
+	from *regexp.Regexp
+	to   string
 }
 
 type exclusion struct {
@@ -41,28 +43,46 @@ func (r *rules) ToHTTPS(url string) (string, bool) {
 		if match {
 			return url, false
 		}
-		log.Debugf("Rule %v did not match string: %v", exclude.pattern.String(), url)
 	}
 	for _, rule := range r.rules {
-		match := rule.rx.MatchString(url)
+		match := rule.from.MatchString(url)
 		if match {
-			return rule.rx.ReplaceAllString(url, rule.to), true
+			return rule.from.ReplaceAllString(url, rule.to), true
 		}
-		log.Debugf("Rule %v did not match string: %v", rule.rx.String(), url)
 	}
 	return url, false
 }
 
-func NewHTTPS(rules string) ToHTTPS {
+func AddAllRules(dir string) ToHTTPS {
 	targets := make(map[string]ToHTTPS)
-	addRuleSet(rules, targets)
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, file := range files {
+		// log.Debugf("Reading file: %v", file.Name())
+		b, err := ioutil.ReadFile(filepath.Join(dir, file.Name()))
+		if err != nil {
+			log.Errorf("Error reading file: %v", err)
+		} else {
+			addRuleSet(b, targets)
+		}
+	}
+
+	log.Debugf("Loaded rules with %v targets", len(targets))
 	return &https{log: log, targets: targets}
 }
 
-func addRuleSet(rules string, targets map[string]ToHTTPS) {
-	b := []byte(rules)
+func NewHTTPS(rules string) ToHTTPS {
+	targets := make(map[string]ToHTTPS)
+	addRuleSet([]byte(rules), targets)
+	return &https{log: log, targets: targets}
+}
+
+func addRuleSet(rules []byte, targets map[string]ToHTTPS) {
 	var r Ruleset
-	xml.Unmarshal(b, &r)
+	xml.Unmarshal(rules, &r)
 
 	// If the rule is turned off, ignore it.
 	if len(r.Off) > 0 {
@@ -78,40 +98,71 @@ func addRuleSet(rules string, targets map[string]ToHTTPS) {
 	rs := ruleSetToRules(r)
 
 	for _, target := range r.Target {
-		log.Debugf("Adding host: %v", target.Host)
 		// TODO: If this is a wildcard domain, add a flag to the base domain to
 		// signify to check for either a LEADING or a TRAILING wildcard.
 		targets[target.Host] = rs
 	}
 
-	log.Debugf("targets: %+v", targets)
+	//log.Debugf("targets: %+v", targets)
 }
 
 func ruleSetToRules(set Ruleset) ToHTTPS {
-	mod := make([]*rule, len(set.Rule))
-	for i, r := range set.Rule {
-		// Precompile the regex to make things faster when actually processing
-		// rules for live traffic.
-		f := regexp.MustCompile(r.From)
-		mod[i] = &rule{rx: f, to: r.To}
+	mod := make([]*rule, 0)
+	for _, r := range set.Rule {
+		// We ignore any rules that attempt to redirect to HTTP, as they would
+		// trigger mixed content in most cases (all cases in browsers that don't
+		// allow mixed content)?
+		if r.To == "http:" {
+			continue
+		}
+		mod = addRule(mod, r)
+
+		//f := regexp.MustCompile(r.From)
+		//mod = append(mod, &rule{from: f, to: r.To})
 	}
-	exclude := make([]*exclusion, len(set.Exclusion))
-	for i, e := range set.Exclusion {
-		p := regexp.MustCompile(e.Pattern)
-		exclude[i] = &exclusion{pattern: p}
+	exclude := make([]*exclusion, 0)
+	for _, e := range set.Exclusion {
+		log.Debugf("Adding exclusion")
+		exclude = addExclusion(exclude, e)
+		//p := regexp.MustCompile(e.Pattern)
+		//exclude[i] = &exclusion{pattern: p}
 	}
 	return &rules{rules: mod, exclusions: exclude}
 }
 
+func addRule(rules []*rule, r Rule) []*rule {
+	// Precompile the regex to make things faster when actually processing
+	// rules for live traffic.
+	//
+	defer func() {
+		if r := recover(); r != nil {
+			log.Debugf("Recovered in f", r)
+		}
+	}()
+	f := regexp.MustCompile(r.From)
+	return append(rules, &rule{from: f, to: r.To})
+}
+
+func addExclusion(exclusions []*exclusion, e Exclusion) []*exclusion {
+	// Precompile the regex to make things faster when actually processing
+	// rules for live traffic.
+	//
+	defer func() {
+		if r := recover(); r != nil {
+			log.Debugf("Recovered in exclusions", r)
+		}
+	}()
+	p := regexp.MustCompile(e.Pattern)
+	return append(exclusions, &exclusion{pattern: p})
+}
+
 func (h *https) ToHTTPS(urlStr string) (string, bool) {
-	//domain, err := h.parseDomain(urlStr)
 	u, err := url.Parse(urlStr)
 	if err != nil {
 		log.Errorf("Could not parse domain %v", err)
 		return urlStr, false
 	}
 	domain := stripPort(u.Host)
-	h.log.Debugf("Got domain: %s", domain)
 	if err != nil {
 		return urlStr, false
 	}
@@ -127,7 +178,7 @@ func (h *https) ToHTTPS(urlStr string) (string, bool) {
 		return rules.ToHTTPS(urlStr)
 	}
 	if rules, ok := h.targets["*."+stripSubdomains(domain)]; ok {
-		h.log.Debugf("Got rules: %+v", rules)
+		h.log.Debugf("Got prefix rules: %+v", rules)
 		return rules.ToHTTPS(urlStr)
 	}
 	return urlStr, false
