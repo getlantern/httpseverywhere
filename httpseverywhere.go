@@ -20,6 +20,9 @@ type ToHTTPS interface {
 	ToHTTPS(url string) (string, bool)
 }
 
+// HTTPS changes an HTTP URL to HTTPS.
+type HTTPS func(url string) (string, bool)
+
 type https struct {
 	log     golog.Logger
 	targets map[string]*Rules
@@ -86,7 +89,7 @@ func AddAllRules(dir string) ToHTTPS {
 }
 
 // NewHTTPSFromGOB creates a new ToHTTPS instance from embedded GOB data.
-func NewHTTPSFromGOB() (ToHTTPS, error) {
+func NewHTTPSFromGOB() (HTTPS, error) {
 	data, err := Asset("targets.gob")
 	if err != nil {
 		log.Errorf("Could not access targets? %v", err)
@@ -96,7 +99,7 @@ func NewHTTPSFromGOB() (ToHTTPS, error) {
 }
 
 // NewHTTPSFromGOBFile creates a new ToHTTPS instance from a serialized Go GOB file.
-func NewHTTPSFromGOBFile(filename string) (ToHTTPS, error) {
+func NewHTTPSFromGOBFile(filename string) (HTTPS, error) {
 	f, err := ioutil.ReadFile(filename)
 	if err != nil {
 		log.Errorf("Could not read file at %v", filename)
@@ -106,7 +109,7 @@ func NewHTTPSFromGOBFile(filename string) (ToHTTPS, error) {
 }
 
 // newHTTPSFromGOB creates a new ToHTTPS instance from a serialized Go GOB file.
-func newHTTPSFromGOB(buf *bytes.Buffer) (ToHTTPS, error) {
+func newHTTPSFromGOB(buf *bytes.Buffer) (HTTPS, error) {
 	dec := gob.NewDecoder(buf)
 	targets := make(map[string]*Rules)
 	err := dec.Decode(&targets)
@@ -126,7 +129,8 @@ func newHTTPSFromGOB(buf *bytes.Buffer) (ToHTTPS, error) {
 			e.pattern, _ = regexp.Compile(e.Pattern)
 		}
 	}
-	return &https{log: log, targets: targets}, nil
+	h := &https{log: log, targets: targets}
+	return h.ToHTTPS, nil
 }
 
 // NewHTTPS creates a new ToHTTPS instance from a single rule set string.

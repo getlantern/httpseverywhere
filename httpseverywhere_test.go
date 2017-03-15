@@ -14,30 +14,30 @@ func TestNewFromGOB(t *testing.T) {
 	assert.Nil(t, err)
 
 	base := "http://name.com"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://name.com", r)
 
 	base = "http://support.name.com"
-	r, mod = h.ToHTTPS(base)
+	r, mod = h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://support.name.com", r)
 }
 
 func TestNewFromGOBFile(t *testing.T) {
-	h, err := NewHTTPSFromGOBFile("preprocess/targets.gob")
+	h, err := NewHTTPSFromGOBFile("test-targets.gob")
 	assert.Nil(t, err)
 
 	base := "http://name.com"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://name.com", r)
 
 	base = "http://support.name.com"
-	r, mod = h.ToHTTPS(base)
+	r, mod = h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://support.name.com", r)

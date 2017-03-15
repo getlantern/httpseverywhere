@@ -21,6 +21,11 @@ func Preprocess(dir string) {
 
 	var errors int
 	for _, file := range files {
+		/*
+			if !strings.HasPrefix(file.Name(), "Name.com") {
+				continue
+			}
+		*/
 		b, errr := ioutil.ReadFile(filepath.Join(dir, file.Name()))
 		if errr != nil {
 			//log.Errorf("Error reading file: %v", err)
