@@ -1,6 +1,8 @@
 package httpseverywhere
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/xml"
 	"io/ioutil"
 	"net/url"
@@ -20,32 +22,40 @@ type ToHTTPS interface {
 
 type https struct {
 	log     golog.Logger
-	targets map[string]ToHTTPS
+	targets map[string]*Rules
 }
 
+// A rule maps the regular expression to match and the string to change it to.
+// It also stores the compiled regular expression for efficiency.
 type rule struct {
 	from *regexp.Regexp
-	to   string
+	From string
+	To   string
 }
 
+// An exclusion just contains the compiled regular expression exclusion pattern.
 type exclusion struct {
+	Pattern string
 	pattern *regexp.Regexp
 }
 
-type rules struct {
-	rules      []*rule
-	exclusions []*exclusion
+// Rules is a struct containing rules and exclusions for a given rule set.
+type Rules struct {
+	Rules      []*rule
+	Exclusions []*exclusion
 }
 
-func (r *rules) ToHTTPS(url string) (string, bool) {
-	for _, exclude := range r.exclusions {
+// ToHTTPS converts the given URL to HTTPS if there is an associated rule for
+// it.
+func (r *Rules) ToHTTPS(url string) (string, bool) {
+	for _, exclude := range r.Exclusions {
 		if exclude.pattern.MatchString(url) {
 			return url, false
 		}
 	}
-	for _, rule := range r.rules {
+	for _, rule := range r.Rules {
 		if rule.from.MatchString(url) {
-			return rule.from.ReplaceAllString(url, rule.to), true
+			return rule.from.ReplaceAllString(url, rule.To), true
 		}
 	}
 	return url, false
@@ -53,7 +63,7 @@ func (r *rules) ToHTTPS(url string) (string, bool) {
 
 // AddAllRules adds all of the rules in the specified directory.
 func AddAllRules(dir string) ToHTTPS {
-	targets := make(map[string]ToHTTPS)
+	targets := make(map[string]*Rules)
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		log.Fatal(err)
@@ -65,7 +75,7 @@ func AddAllRules(dir string) ToHTTPS {
 		if err != nil {
 			log.Errorf("Error reading file: %v", err)
 		} else {
-			if !addRuleSet(b, targets) {
+			if !AddRuleSet(b, targets) {
 				errors++
 			}
 		}
@@ -75,14 +85,59 @@ func AddAllRules(dir string) ToHTTPS {
 	return &https{log: log, targets: targets}
 }
 
+// NewHTTPSFromGOB creates a new ToHTTPS instance from embedded GOB data.
+func NewHTTPSFromGOB() (ToHTTPS, error) {
+	data, err := Asset("targets.gob")
+	if err != nil {
+		log.Errorf("Could not access targets? %v", err)
+		return nil, err
+	}
+	return newHTTPSFromGOB(bytes.NewBuffer(data))
+}
+
+// NewHTTPSFromGOBFile creates a new ToHTTPS instance from a serialized Go GOB file.
+func NewHTTPSFromGOBFile(filename string) (ToHTTPS, error) {
+	f, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Errorf("Could not read file at %v", filename)
+		return nil, err
+	}
+	return newHTTPSFromGOB(bytes.NewBuffer(f))
+}
+
+// newHTTPSFromGOB creates a new ToHTTPS instance from a serialized Go GOB file.
+func newHTTPSFromGOB(buf *bytes.Buffer) (ToHTTPS, error) {
+	dec := gob.NewDecoder(buf)
+	targets := make(map[string]*Rules)
+	err := dec.Decode(&targets)
+	if err != nil {
+		log.Errorf("Could not decode: %v", err)
+		return nil, err
+	}
+
+	// The compiled regular expressions aren't serialized, so we have to manually
+	// compile them.
+	for _, v := range targets {
+		for _, r := range v.Rules {
+			r.from, _ = regexp.Compile(r.From)
+		}
+
+		for _, e := range v.Exclusions {
+			e.pattern, _ = regexp.Compile(e.Pattern)
+		}
+	}
+	return &https{log: log, targets: targets}, nil
+}
+
 // NewHTTPS creates a new ToHTTPS instance from a single rule set string.
 func NewHTTPS(rules string) ToHTTPS {
-	targets := make(map[string]ToHTTPS)
-	addRuleSet([]byte(rules), targets)
+	targets := make(map[string]*Rules)
+	AddRuleSet([]byte(rules), targets)
 	return &https{log: log, targets: targets}
 }
 
-func addRuleSet(rules []byte, targets map[string]ToHTTPS) bool {
+// AddRuleSet adds the specified rule set to the map of targets.
+func AddRuleSet(rules []byte, targets map[string]*Rules) bool {
 	var r Ruleset
 	xml.Unmarshal(rules, &r)
 
@@ -108,7 +163,7 @@ func addRuleSet(rules []byte, targets map[string]ToHTTPS) bool {
 	return true
 }
 
-func ruleSetToRules(set Ruleset) (ToHTTPS, error) {
+func ruleSetToRules(set Ruleset) (*Rules, error) {
 	mod := make([]*rule, 0)
 	for _, r := range set.Rule {
 		// We ignore any rules that attempt to redirect to HTTP, as they would
@@ -120,9 +175,9 @@ func ruleSetToRules(set Ruleset) (ToHTTPS, error) {
 		f, err := regexp.Compile(r.From)
 		if err != nil {
 			log.Debugf("Could not compile regex: %v", err)
-			return nil, err
+			return &Rules{}, err
 		}
-		mod = append(mod, &rule{from: f, to: r.To})
+		mod = append(mod, &rule{From: r.From, from: f, To: r.To})
 
 	}
 	exclude := make([]*exclusion, 0)
@@ -130,11 +185,11 @@ func ruleSetToRules(set Ruleset) (ToHTTPS, error) {
 		p, err := regexp.Compile(e.Pattern)
 		if err != nil {
 			log.Debugf("Could not compile regex for exclusion: %v", err)
-			return nil, err
+			return &Rules{}, err
 		}
-		exclude = append(exclude, &exclusion{pattern: p})
+		exclude = append(exclude, &exclusion{Pattern: e.Pattern, pattern: p})
 	}
-	return &rules{rules: mod, exclusions: exclude}, nil
+	return &Rules{Rules: mod, Exclusions: exclude}, nil
 }
 
 func (h *https) ToHTTPS(urlStr string) (string, bool) {
