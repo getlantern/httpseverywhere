@@ -27,7 +27,7 @@ func TestNewFromGOB(t *testing.T) {
 }
 
 func TestNewFromGOBFile(t *testing.T) {
-	h, err := NewHTTPSFromGOBFile("test-targets.gob")
+	h, err := NewHTTPSFromGOBFile("test/test-targets.gob")
 	assert.Nil(t, err)
 
 	base := "http://name.com"

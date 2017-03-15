@@ -88,6 +88,11 @@ func AddAllRules(dir string) ToHTTPS {
 	return &https{log: log, targets: targets}
 }
 
+// New creates a new ToHTTPS instance.
+func New() (HTTPS, error) {
+	return NewHTTPSFromGOB()
+}
+
 // NewHTTPSFromGOB creates a new ToHTTPS instance from embedded GOB data.
 func NewHTTPSFromGOB() (HTTPS, error) {
 	data, err := Asset("targets.gob")
