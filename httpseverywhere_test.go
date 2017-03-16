@@ -47,13 +47,13 @@ func TestAddAllRules(t *testing.T) {
 	h := AddAllRules("./testrules")
 
 	base := "http://name.com"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://name.com", r)
 
 	base = "http://support.name.com"
-	r, mod = h.ToHTTPS(base)
+	r, mod = h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://support.name.com", r)
@@ -85,13 +85,13 @@ func TestMixedContent(t *testing.T) {
 
 	h := NewHTTPS(testRule)
 	base := "http://rabbitmq.com"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.False(t, mod, "should NOT have been modified to https")
 	assert.Equal(t, "http://rabbitmq.com", r)
 
 	base = "http://www.rabbitmq.com"
-	r, mod = h.ToHTTPS(base)
+	r, mod = h(base)
 
 	assert.False(t, mod, "should NOT have been modified to https")
 	assert.Equal(t, "http://www.rabbitmq.com", r)
@@ -107,7 +107,7 @@ func TestIgnoreHTTPRedirect(t *testing.T) {
 
 	h := NewHTTPS(testRule)
 	base := "https://stackoverflow.com/users/authenticate/"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.False(t, mod, "should NOT have been modified FROM https")
 	assert.Equal(t, "https://stackoverflow.com/users/authenticate/", r)
@@ -126,21 +126,21 @@ func TestExclusions(t *testing.T) {
 
 	h := NewHTTPS(testRule)
 	base := "http://stackoverflow.com/users/authenticate/"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.False(t, mod, "should NOT have been modified to https")
 	assert.Equal(t, "http://stackoverflow.com/users/authenticate/", r)
 
 	// Test when we don't match the exclusion string.
 	base = "http://stackoverflow.com/users/"
-	r, mod = h.ToHTTPS(base)
+	r, mod = h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://stackoverflow.com/users/", r)
 
 	// Test when we don't match the exclusion string or any rules
 	base = "https://stackoverflow.com/users/"
-	r, mod = h.ToHTTPS(base)
+	r, mod = h(base)
 
 	assert.False(t, mod, "already HTTPS")
 	assert.Equal(t, "https://stackoverflow.com/users/", r)
@@ -157,13 +157,13 @@ func TestDefaultOff(t *testing.T) {
 
 	h := NewHTTPS(testRule)
 	base := "http://rabbitmq.com"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.False(t, mod, "should NOT have been modified to https")
 	assert.Equal(t, "http://rabbitmq.com", r)
 
 	base = "http://www.rabbitmq.com"
-	r, mod = h.ToHTTPS(base)
+	r, mod = h(base)
 
 	assert.False(t, mod, "should NOT have been modified to https")
 	assert.Equal(t, "http://www.rabbitmq.com", r)
@@ -179,7 +179,7 @@ func TestComplex(t *testing.T) {
 </ruleset>`
 	h := NewHTTPS(testRule)
 	base := "http://fr.wikipedia.org/wiki/Chose"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://secure.wikimedia.org/wikipedia/fr/wiki/Chose", r)
@@ -196,13 +196,13 @@ func TestMultipleTargets(t *testing.T) {
 
 	h := NewHTTPS(testRule)
 	base := "http://rabbitmq.com"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://rabbitmq.com", r)
 
 	base = "http://www.rabbitmq.com"
-	r, mod = h.ToHTTPS(base)
+	r, mod = h(base)
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://www.rabbitmq.com", r)
@@ -217,7 +217,7 @@ func TestRedirect(t *testing.T) {
 	</ruleset>`
 	h := NewHTTPS(testRule)
 	base := "http://bundler.io"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	log.Debugf("New: %v", r)
 	assert.True(t, mod, "should have been modified to https")
@@ -262,7 +262,7 @@ func TestWildcardPrefix(t *testing.T) {
 	</ruleset>`
 	h := NewHTTPS(rule)
 	base := "http://subdomain.bundler.io"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.True(t, mod)
 	assert.Equal(t, "https://subdomain.bundler.io", r)
@@ -275,7 +275,7 @@ func TestWildcardSuffix(t *testing.T) {
 	</ruleset>`
 	h := NewHTTPS(rule)
 	base := "http://bundler.io"
-	r, mod := h.ToHTTPS(base)
+	r, mod := h(base)
 
 	assert.True(t, mod)
 	assert.Equal(t, "https://bundler.io", r)

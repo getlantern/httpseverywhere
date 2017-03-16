@@ -15,13 +15,8 @@ import (
 
 var log = golog.LoggerFor("httpseverywhere")
 
-// ToHTTPS changes an HTTP URL to HTTPS.
-type ToHTTPS interface {
-	ToHTTPS(url string) (string, bool)
-}
-
-// HTTPS changes an HTTP URL to HTTPS.
-type HTTPS func(url string) (string, bool)
+// Rewrite changes an HTTP URL to Rewrite.
+type Rewrite func(url string) (string, bool)
 
 type https struct {
 	log     golog.Logger
@@ -48,9 +43,9 @@ type Rules struct {
 	Exclusions []*exclusion
 }
 
-// ToHTTPS converts the given URL to HTTPS if there is an associated rule for
+// rewrite converts the given URL to HTTPS if there is an associated rule for
 // it.
-func (r *Rules) ToHTTPS(url string) (string, bool) {
+func (r *Rules) rewrite(url string) (string, bool) {
 	for _, exclude := range r.Exclusions {
 		if exclude.pattern.MatchString(url) {
 			return url, false
@@ -65,7 +60,7 @@ func (r *Rules) ToHTTPS(url string) (string, bool) {
 }
 
 // AddAllRules adds all of the rules in the specified directory.
-func AddAllRules(dir string) ToHTTPS {
+func AddAllRules(dir string) Rewrite {
 	targets := make(map[string]*Rules)
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -85,16 +80,16 @@ func AddAllRules(dir string) ToHTTPS {
 	}
 
 	log.Debugf("Loaded rules with %v targets and %v errors", len(targets), errors)
-	return &https{log: log, targets: targets}
+	return (&https{log: log, targets: targets}).rewrite
 }
 
 // New creates a new ToHTTPS instance.
-func New() (HTTPS, error) {
+func New() (Rewrite, error) {
 	return NewHTTPSFromGOB()
 }
 
 // NewHTTPSFromGOB creates a new ToHTTPS instance from embedded GOB data.
-func NewHTTPSFromGOB() (HTTPS, error) {
+func NewHTTPSFromGOB() (Rewrite, error) {
 	data, err := Asset("targets.gob")
 	if err != nil {
 		log.Errorf("Could not access targets? %v", err)
@@ -103,8 +98,8 @@ func NewHTTPSFromGOB() (HTTPS, error) {
 	return newHTTPSFromGOB(bytes.NewBuffer(data))
 }
 
-// NewHTTPSFromGOBFile creates a new ToHTTPS instance from a serialized Go GOB file.
-func NewHTTPSFromGOBFile(filename string) (HTTPS, error) {
+// NewHTTPSFromGOBFile creates a new Rewrite instance from a serialized Go GOB file.
+func NewHTTPSFromGOBFile(filename string) (Rewrite, error) {
 	f, err := ioutil.ReadFile(filename)
 	if err != nil {
 		log.Errorf("Could not read file at %v", filename)
@@ -113,8 +108,8 @@ func NewHTTPSFromGOBFile(filename string) (HTTPS, error) {
 	return newHTTPSFromGOB(bytes.NewBuffer(f))
 }
 
-// newHTTPSFromGOB creates a new ToHTTPS instance from a serialized Go GOB file.
-func newHTTPSFromGOB(buf *bytes.Buffer) (HTTPS, error) {
+// newHTTPSFromGOB creates a new Rewrite instance from a serialized Go GOB file.
+func newHTTPSFromGOB(buf *bytes.Buffer) (Rewrite, error) {
 	dec := gob.NewDecoder(buf)
 	targets := make(map[string]*Rules)
 	err := dec.Decode(&targets)
@@ -134,15 +129,14 @@ func newHTTPSFromGOB(buf *bytes.Buffer) (HTTPS, error) {
 			e.pattern, _ = regexp.Compile(e.Pattern)
 		}
 	}
-	h := &https{log: log, targets: targets}
-	return h.ToHTTPS, nil
+	return (&https{log: log, targets: targets}).rewrite, nil
 }
 
-// NewHTTPS creates a new ToHTTPS instance from a single rule set string.
-func NewHTTPS(rules string) ToHTTPS {
+// NewHTTPS creates a new Rewrite instance from a single rule set string.
+func NewHTTPS(rules string) Rewrite {
 	targets := make(map[string]*Rules)
 	AddRuleSet([]byte(rules), targets)
-	return &https{log: log, targets: targets}
+	return (&https{log: log, targets: targets}).rewrite
 }
 
 // AddRuleSet adds the specified rule set to the map of targets.
@@ -184,7 +178,7 @@ func ruleSetToRules(set Ruleset) (*Rules, error) {
 		f, err := regexp.Compile(r.From)
 		if err != nil {
 			log.Debugf("Could not compile regex: %v", err)
-			return &Rules{}, err
+			return nil, err
 		}
 		mod = append(mod, &rule{From: r.From, from: f, To: r.To})
 
@@ -194,14 +188,14 @@ func ruleSetToRules(set Ruleset) (*Rules, error) {
 		p, err := regexp.Compile(e.Pattern)
 		if err != nil {
 			log.Debugf("Could not compile regex for exclusion: %v", err)
-			return &Rules{}, err
+			return nil, err
 		}
 		exclude = append(exclude, &exclusion{Pattern: e.Pattern, pattern: p})
 	}
 	return &Rules{Rules: mod, Exclusions: exclude}, nil
 }
 
-func (h *https) ToHTTPS(urlStr string) (string, bool) {
+func (h *https) rewrite(urlStr string) (string, bool) {
 	u, err := url.Parse(urlStr)
 	if err != nil {
 		log.Errorf("Could not parse domain %v", err)
@@ -216,15 +210,15 @@ func (h *https) ToHTTPS(urlStr string) (string, bool) {
 
 	if rules, ok := h.targets[domain]; ok {
 		//h.log.Debugf("Got rules: %+v", rules)
-		return rules.ToHTTPS(urlStr)
+		return rules.rewrite(urlStr)
 	}
 	if rules, ok := h.targets[stripTLD(domain)+"*"]; ok {
 		//h.log.Debugf("Got suffix rules: %+v", rules)
-		return rules.ToHTTPS(urlStr)
+		return rules.rewrite(urlStr)
 	}
 	if rules, ok := h.targets["*."+stripSubdomains(domain)]; ok {
 		//h.log.Debugf("Got prefix rules: %+v", rules)
-		return rules.ToHTTPS(urlStr)
+		return rules.rewrite(urlStr)
 	}
 	return urlStr, false
 }
