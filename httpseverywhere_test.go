@@ -10,8 +10,7 @@ import (
 )
 
 func TestNewFromGOB(t *testing.T) {
-	h, err := NewHTTPSFromGOB()
-	assert.Nil(t, err)
+	h := new()
 
 	base := "http://name.com"
 	r, mod := h(base)
@@ -25,52 +24,6 @@ func TestNewFromGOB(t *testing.T) {
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://support.name.com", r)
 }
-
-func TestNewFromGOBFile(t *testing.T) {
-	h, err := NewHTTPSFromGOBFile("test/test-targets.gob")
-	assert.Nil(t, err)
-
-	base := "http://name.com"
-	r, mod := h(base)
-
-	assert.True(t, mod, "should have been modified to https")
-	assert.Equal(t, "https://name.com", r)
-
-	base = "http://support.name.com"
-	r, mod = h(base)
-
-	assert.True(t, mod, "should have been modified to https")
-	assert.Equal(t, "https://support.name.com", r)
-}
-
-func TestAddAllRules(t *testing.T) {
-	h := AddAllRules("./testrules")
-
-	base := "http://name.com"
-	r, mod := h(base)
-
-	assert.True(t, mod, "should have been modified to https")
-	assert.Equal(t, "https://name.com", r)
-
-	base = "http://support.name.com"
-	r, mod = h(base)
-
-	assert.True(t, mod, "should have been modified to https")
-	assert.Equal(t, "https://support.name.com", r)
-}
-
-func BenchmarkAddAllRules(t *testing.B) {
-	//log := golog.LoggerFor("httpseverywhere_test")
-
-	AddAllRules("./testrules")
-}
-
-/*
-func main() {
-	br := testing.Benchmark(BenchmarkAddAllRules)
-	fmt.Println(br)
-}
-*/
 
 // Test for the mixed content flag. Because we don't run on any platform that
 // supports mixed content, the flag essentially means the rule is turned off.
@@ -83,7 +36,7 @@ func TestMixedContent(t *testing.T) {
                 to="https:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h, _ := newHTTPS(testRule)
 	base := "http://rabbitmq.com"
 	r, mod := h(base)
 
@@ -105,7 +58,7 @@ func TestIgnoreHTTPRedirect(t *testing.T) {
 								to="http:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h, _ := newHTTPS(testRule)
 	base := "https://stackoverflow.com/users/authenticate/"
 	r, mod := h(base)
 
@@ -124,7 +77,7 @@ func TestExclusions(t *testing.T) {
 								to="https:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h, _ := newHTTPS(testRule)
 	base := "http://stackoverflow.com/users/authenticate/"
 	r, mod := h(base)
 
@@ -155,7 +108,7 @@ func TestDefaultOff(t *testing.T) {
                 to="https:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h, _ := newHTTPS(testRule)
 	base := "http://rabbitmq.com"
 	r, mod := h(base)
 
@@ -177,7 +130,7 @@ func TestComplex(t *testing.T) {
   <rule from="^http://(\w{2})\.wikipedia\.org/wiki/"
           to="https://secure.wikimedia.org/wikipedia/$1/wiki/"/>
 </ruleset>`
-	h := NewHTTPS(testRule)
+	h, _ := newHTTPS(testRule)
 	base := "http://fr.wikipedia.org/wiki/Chose"
 	r, mod := h(base)
 
@@ -194,7 +147,7 @@ func TestMultipleTargets(t *testing.T) {
                 to="https:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h, _ := newHTTPS(testRule)
 	base := "http://rabbitmq.com"
 	r, mod := h(base)
 
@@ -208,6 +161,43 @@ func TestMultipleTargets(t *testing.T) {
 	assert.Equal(t, "https://www.rabbitmq.com", r)
 }
 
+func TestIgnoreMultipleSubdomains(t *testing.T) {
+	var testRule = `<ruleset name="RabbitMQ">
+        <target host="*.b.rabbitmq.com" />
+
+        <rule from="^http:"
+                to="https:" />
+</ruleset>`
+
+	h, _ := newHTTPS(testRule)
+	base := "http://rabbitmq.com"
+	r, mod := h(base)
+
+	assert.False(t, mod, "should NOT have been modified to https")
+	assert.Equal(t, "http://rabbitmq.com", r)
+}
+
+func TestDuplicateTargets(t *testing.T) {
+	var testRule = `<ruleset name="RabbitMQ">
+        <target host="rabbitmq.com" />
+
+        <rule from="^http:"
+                to="https:" />
+</ruleset>`
+
+	h, targets := newHTTPS(testRule)
+	base := "http://rabbitmq.com"
+	r, mod := h(base)
+
+	assert.True(t, mod, "should have been modified to https")
+	assert.Equal(t, "https://rabbitmq.com", r)
+
+	// Now add another ruleset with the same target.
+	processed, duplicates := AddRuleSet([]byte(testRule), targets)
+	assert.True(t, processed, "should have been considered processed")
+	assert.Equal(t, 1, duplicates, "Should be a duplicate entry")
+}
+
 func TestRedirect(t *testing.T) {
 	log := golog.LoggerFor("httpseverywhere_test")
 
@@ -215,7 +205,7 @@ func TestRedirect(t *testing.T) {
 		<target host="bundler.io"/>
 		<rule from="^http:" to="https:" />
 	</ruleset>`
-	h := NewHTTPS(testRule)
+	h, _ := newHTTPS(testRule)
 	base := "http://bundler.io"
 	r, mod := h(base)
 
@@ -260,7 +250,7 @@ func TestWildcardPrefix(t *testing.T) {
 		<target host="*.bundler.io"/>
 		<rule from="^http:" to="https:" />
 	</ruleset>`
-	h := NewHTTPS(rule)
+	h, _ := newHTTPS(rule)
 	base := "http://subdomain.bundler.io"
 	r, mod := h(base)
 
@@ -273,7 +263,7 @@ func TestWildcardSuffix(t *testing.T) {
 		<target host="bundler.*"/>
 		<rule from="^http:" to="https:" />
 	</ruleset>`
-	h := NewHTTPS(rule)
+	h, _ := newHTTPS(rule)
 	base := "http://bundler.io"
 	r, mod := h(base)
 

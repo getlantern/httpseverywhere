@@ -4,19 +4,21 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/xml"
-	"io/ioutil"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/getlantern/golog"
+	"github.com/getlantern/tldextract"
 )
 
 var log = golog.LoggerFor("httpseverywhere")
 
-// Rewrite changes an HTTP URL to Rewrite.
-type Rewrite func(url string) (string, bool)
+// rewrite changes an HTTP URL to rewrite.
+type rewrite func(url string) (string, bool)
+
+// Rewrite exports the rewrite method for users of this library.
+var Rewrite = new()
 
 type https struct {
 	log     golog.Logger
@@ -37,10 +39,92 @@ type exclusion struct {
 	pattern *regexp.Regexp
 }
 
-// Rules is a struct containing rules and exclusions for a given rule set.
+// Rules is a struct containing rules and exclusions for a given rule set. This
+// is public so that we can encode and decode it from GOB format.
 type Rules struct {
 	Rules      []*rule
 	Exclusions []*exclusion
+}
+
+// new creates a new rewrite instance from embedded GOB data.
+func new() rewrite {
+	data := MustAsset("targets.gob")
+	buf := bytes.NewBuffer(data)
+
+	dec := gob.NewDecoder(buf)
+	targets := make(map[string]*Rules)
+	err := dec.Decode(&targets)
+	if err != nil {
+		log.Errorf("Could not decode: %v", err)
+		return nil
+	}
+
+	// The compiled regular expressions aren't serialized, so we have to manually
+	// compile them.
+	for _, v := range targets {
+		for _, r := range v.Rules {
+			r.from, _ = regexp.Compile(r.From)
+		}
+
+		for _, e := range v.Exclusions {
+			e.pattern, _ = regexp.Compile(e.Pattern)
+		}
+	}
+	return newRewrite(targets)
+}
+
+// AddRuleSet adds the specified rule set to the map of targets. Returns
+// whether or not the rule processed correctly and whether or not the
+// target was a duplicate. Duplicates are ignored but are considered to have
+// processed correctly.
+func AddRuleSet(rules []byte, targets map[string]*Rules) (bool, int) {
+	var r Ruleset
+	xml.Unmarshal(rules, &r)
+
+	// If the rule is turned off, ignore it.
+	if len(r.Off) > 0 {
+		return false, 0
+	}
+
+	// We don't run on any platforms (aka Tor) that support mixed content, so
+	// ignore any rule that is mixedcontent-only.
+	if r.Platform == "mixedcontent" {
+		return false, 0
+	}
+
+	rs, err := ruleSetToRules(r)
+	if err != nil {
+		return false, 0
+	}
+
+	duplicates := 0
+	extract := tldextract.New()
+	for _, target := range r.Target {
+		if strings.HasPrefix(target.Host, "*") {
+			// This artificially turns the target into a valid URL for processing
+			// by TLD extract.
+			urlStr := "http://" + strings.Replace(target.Host, "*", "SUBDOMAIN", 1)
+			e := extract.Extract(urlStr)
+
+			if strings.Contains(e.Sub, ".") {
+				log.Debugf("Ingoring wildcard rule with multiple subdomains: %+v;%s\n", e, target.Host)
+				return false, duplicates
+			}
+			duplicates += addRules(targets, target.Host, rs)
+		} else {
+			duplicates += addRules(targets, target.Host, rs)
+		}
+	}
+	return true, duplicates
+}
+
+func addRules(targets map[string]*Rules, host string, rules *Rules) int {
+	if _, ok := targets[host]; ok {
+		// Ignoring duplicate.
+		return 1
+	}
+	targets[host] = rules
+	return 0
 }
 
 // rewrite converts the given URL to HTTPS if there is an associated rule for
@@ -59,111 +143,16 @@ func (r *Rules) rewrite(url string) (string, bool) {
 	return url, false
 }
 
-// AddAllRules adds all of the rules in the specified directory.
-func AddAllRules(dir string) Rewrite {
-	targets := make(map[string]*Rules)
-	files, err := ioutil.ReadDir(dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var errors int
-	for _, file := range files {
-		b, err := ioutil.ReadFile(filepath.Join(dir, file.Name()))
-		if err != nil {
-			log.Errorf("Error reading file: %v", err)
-		} else {
-			if !AddRuleSet(b, targets) {
-				errors++
-			}
-		}
-	}
-
-	log.Debugf("Loaded rules with %v targets and %v errors", len(targets), errors)
-	return (&https{log: log, targets: targets}).rewrite
-}
-
-// New creates a new ToHTTPS instance.
-func New() (Rewrite, error) {
-	return NewHTTPSFromGOB()
-}
-
-// NewHTTPSFromGOB creates a new ToHTTPS instance from embedded GOB data.
-func NewHTTPSFromGOB() (Rewrite, error) {
-	data, err := Asset("targets.gob")
-	if err != nil {
-		log.Errorf("Could not access targets? %v", err)
-		return nil, err
-	}
-	return newHTTPSFromGOB(bytes.NewBuffer(data))
-}
-
-// NewHTTPSFromGOBFile creates a new Rewrite instance from a serialized Go GOB file.
-func NewHTTPSFromGOBFile(filename string) (Rewrite, error) {
-	f, err := ioutil.ReadFile(filename)
-	if err != nil {
-		log.Errorf("Could not read file at %v", filename)
-		return nil, err
-	}
-	return newHTTPSFromGOB(bytes.NewBuffer(f))
-}
-
-// newHTTPSFromGOB creates a new Rewrite instance from a serialized Go GOB file.
-func newHTTPSFromGOB(buf *bytes.Buffer) (Rewrite, error) {
-	dec := gob.NewDecoder(buf)
-	targets := make(map[string]*Rules)
-	err := dec.Decode(&targets)
-	if err != nil {
-		log.Errorf("Could not decode: %v", err)
-		return nil, err
-	}
-
-	// The compiled regular expressions aren't serialized, so we have to manually
-	// compile them.
-	for _, v := range targets {
-		for _, r := range v.Rules {
-			r.from, _ = regexp.Compile(r.From)
-		}
-
-		for _, e := range v.Exclusions {
-			e.pattern, _ = regexp.Compile(e.Pattern)
-		}
-	}
-	return (&https{log: log, targets: targets}).rewrite, nil
-}
-
-// NewHTTPS creates a new Rewrite instance from a single rule set string.
-func NewHTTPS(rules string) Rewrite {
+// newHTTPS creates a new rewrite instance from a single rule set string. In
+// practice this is used for testing.
+func newHTTPS(rules string) (rewrite, map[string]*Rules) {
 	targets := make(map[string]*Rules)
 	AddRuleSet([]byte(rules), targets)
-	return (&https{log: log, targets: targets}).rewrite
+	return newRewrite(targets), targets
 }
 
-// AddRuleSet adds the specified rule set to the map of targets.
-func AddRuleSet(rules []byte, targets map[string]*Rules) bool {
-	var r Ruleset
-	xml.Unmarshal(rules, &r)
-
-	// If the rule is turned off, ignore it.
-	if len(r.Off) > 0 {
-		return false
-	}
-
-	// We don't run on any platforms (aka Tor) that support mixed content, so
-	// ignore any rule that is mixedcontent-only.
-	if r.Platform == "mixedcontent" {
-		return false
-	}
-
-	rs, err := ruleSetToRules(r)
-	if err != nil {
-		return false
-	}
-
-	for _, target := range r.Target {
-		targets[target.Host] = rs
-	}
-	return true
+func newRewrite(targets map[string]*Rules) rewrite {
+	return (&https{log: log, targets: targets}).rewrite
 }
 
 func ruleSetToRules(set Ruleset) (*Rules, error) {

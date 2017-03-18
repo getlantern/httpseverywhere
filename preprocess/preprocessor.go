@@ -19,6 +19,7 @@ func Preprocess(dir string) {
 		log.Fatal(err)
 	}
 
+	var duplicates int
 	var errors int
 	for _, file := range files {
 		/*
@@ -30,13 +31,16 @@ func Preprocess(dir string) {
 		if errr != nil {
 			//log.Errorf("Error reading file: %v", err)
 		} else {
-			if !httpseverywhere.AddRuleSet(b, targets) {
+			processed, dups := httpseverywhere.AddRuleSet(b, targets)
+			if !processed {
 				errors++
 			}
+			duplicates += dups
 		}
 	}
 
 	log.Debugf("Loaded rules with %v targets and %v errors", len(targets), errors)
+	log.Debugf("DUPLICATE TARGETS: %v", duplicates)
 	//return &https{log: log, targets: targets}
 
 	var buf bytes.Buffer
