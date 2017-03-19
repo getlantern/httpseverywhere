@@ -104,7 +104,7 @@ func AddRuleSet(rules []byte, targets map[string]*Rules) (bool, int) {
 		if strings.HasPrefix(target.Host, "*") {
 			// This artificially turns the target into a valid URL for processing
 			// by TLD extract.
-			urlStr := "http://" + strings.Replace(target.Host, "*", "SUBDOMAIN", 1)
+			urlStr := "http://" + strings.Replace(target.Host, "*", "sub", 1)
 			e := extract.Extract(urlStr)
 
 			if strings.Contains(e.Sub, ".") {
