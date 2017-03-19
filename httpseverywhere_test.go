@@ -214,37 +214,6 @@ func TestRedirect(t *testing.T) {
 	assert.Equal(t, "https://bundler.io", r)
 }
 
-func TestStripTLD(t *testing.T) {
-	base := "bundler.io"
-	stripped := stripTLD(base)
-	assert.Equal(t, "bundler.", stripped)
-}
-
-func TestStripSubdomain(t *testing.T) {
-	base := "subdomain.bundler.io"
-	stripped := stripSubdomains(base)
-	assert.Equal(t, "bundler.io", stripped)
-
-	base = "bundler.io"
-	stripped = stripSubdomains(base)
-	assert.Equal(t, "bundler.io", stripped)
-
-	base = "bundler.a.io"
-	stripped = stripSubdomains(base)
-
-	assert.Equal(t, "a.io", stripped)
-
-	base = "a.b.io"
-	stripped = stripSubdomains(base)
-
-	assert.Equal(t, "b.io", stripped)
-
-	base = "a.b.c.com"
-	stripped = stripSubdomains(base)
-
-	assert.Equal(t, "c.com", stripped)
-}
-
 func TestWildcardPrefix(t *testing.T) {
 	var rule = `<ruleset name="Bundler.io">
 		<target host="*.bundler.io"/>

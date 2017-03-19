@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/xml"
-	"net/url"
 	"regexp"
 	"strings"
 
@@ -12,7 +11,10 @@ import (
 	"github.com/getlantern/tldextract"
 )
 
-var log = golog.LoggerFor("httpseverywhere")
+var (
+	log     = golog.LoggerFor("httpseverywhere")
+	extract = tldextract.New()
+)
 
 // rewrite changes an HTTP URL to rewrite.
 type rewrite func(url string) (string, bool)
@@ -98,7 +100,6 @@ func AddRuleSet(rules []byte, targets map[string]*Rules) (bool, int) {
 	}
 
 	duplicates := 0
-	extract := tldextract.New()
 	for _, target := range r.Target {
 		if strings.HasPrefix(target.Host, "*") {
 			// This artificially turns the target into a valid URL for processing
@@ -185,61 +186,28 @@ func ruleSetToRules(set Ruleset) (*Rules, error) {
 }
 
 func (h *https) rewrite(urlStr string) (string, bool) {
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		log.Errorf("Could not parse domain %v", err)
-		return urlStr, false
-	}
-	domain := stripPort(u.Host)
-	if err != nil {
-		return urlStr, false
-	}
-
-	// We need to check for both the domain itself as well as the wildcard domain.
+	result := extract.Extract(urlStr)
+	domain := result.Root + "." + result.Tld
 
 	if rules, ok := h.targets[domain]; ok {
 		//h.log.Debugf("Got rules: %+v", rules)
 		return rules.rewrite(urlStr)
 	}
-	if rules, ok := h.targets[stripTLD(domain)+"*"]; ok {
+	if rules, ok := h.targets[wildcardSuffix(result)]; ok {
 		//h.log.Debugf("Got suffix rules: %+v", rules)
 		return rules.rewrite(urlStr)
 	}
-	if rules, ok := h.targets["*."+stripSubdomains(domain)]; ok {
+	if rules, ok := h.targets["*."+domain]; ok {
 		//h.log.Debugf("Got prefix rules: %+v", rules)
 		return rules.rewrite(urlStr)
 	}
 	return urlStr, false
 }
 
-func stripSubdomains(hostport string) string {
-	dot := strings.IndexByte(hostport, '.')
-	if dot == -1 {
-		return hostport
-	} else if len(hostport)-dot < 5 {
-		return hostport
+func wildcardSuffix(result *tldextract.Result) string {
+	var base string
+	if len(result.Sub) > 0 {
+		base = result.Sub + "."
 	}
-	dot++
-	return stripSubdomains(hostport[dot:])
-}
-
-func stripPort(hostport string) string {
-	colon := strings.IndexByte(hostport, ':')
-	if colon == -1 {
-		return hostport
-	}
-	if i := strings.IndexByte(hostport, ']'); i != -1 {
-		return strings.TrimPrefix(hostport[:i], "[")
-	}
-	return hostport[:colon]
-}
-
-func stripTLD(domain string) string {
-	// Note the domain here is already stripped of all subdomains.
-	dot := strings.IndexByte(domain, '.')
-	if dot == -1 {
-		return domain
-	}
-	dot++
-	return domain[:dot]
+	return base + result.Root + ".*"
 }
