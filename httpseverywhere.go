@@ -104,12 +104,12 @@ func AddRuleSet(rules []byte, targets map[string]*Rules) (bool, int) {
 		if strings.HasPrefix(target.Host, "*") {
 			// This artificially turns the target into a valid URL for processing
 			// by TLD extract.
-			urlStr := "http://" + strings.Replace(target.Host, "*", "sub", 1)
+			urlStr := "http://" + strings.Replace(target.Host, "*", "pre", 1)
 			e := extract.Extract(urlStr)
 
 			if strings.Contains(e.Sub, ".") {
 				log.Debugf("Ingoring wildcard rule with multiple subdomains: %+v;%s\n", e, target.Host)
-				return false, duplicates
+				continue
 			}
 			duplicates += addRules(targets, target.Host, rs)
 		} else {
