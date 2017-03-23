@@ -3,9 +3,6 @@ package httpseverywhere
 import (
 	"testing"
 
-	//"github.com/Sirupsen/logrus"
-
-	"github.com/getlantern/golog"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,6 +20,16 @@ func TestNewFromGOB(t *testing.T) {
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://support.name.com", r)
+}
+
+func TestLinkedIn(t *testing.T) {
+	h := new()
+
+	base := "http://platform.linkedin.com/"
+	r, mod := h(base)
+
+	assert.True(t, mod)
+	assert.Equal(t, "https://platform.linkedin.com/", r)
 }
 
 // Test for the mixed content flag. Because we don't run on any platform that
@@ -142,6 +149,7 @@ func TestMultipleTargets(t *testing.T) {
 	var testRule = `<ruleset name="RabbitMQ">
         <target host="rabbitmq.com" />
         <target host="www.rabbitmq.com" />
+				<target host="rabbitmq.*" />
 
         <rule from="^http:"
                 to="https:" />
@@ -159,6 +167,12 @@ func TestMultipleTargets(t *testing.T) {
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://www.rabbitmq.com", r)
+
+	base = "http://rabbitmq.net"
+	r, mod = h(base)
+
+	assert.True(t, mod, "should have been modified to https")
+	assert.Equal(t, "https://rabbitmq.net", r)
 }
 
 func TestIgnoreMultipleSubdomains(t *testing.T) {
@@ -193,14 +207,11 @@ func TestDuplicateTargets(t *testing.T) {
 	assert.Equal(t, "https://rabbitmq.com", r)
 
 	// Now add another ruleset with the same target.
-	processed, duplicates := AddRuleSet([]byte(testRule), targets)
+	processed := Preprocessor.AddRuleSet([]byte(testRule), targets)
 	assert.True(t, processed, "should have been considered processed")
-	assert.Equal(t, 1, duplicates, "Should be a duplicate entry")
 }
 
-func TestRedirect(t *testing.T) {
-	log := golog.LoggerFor("httpseverywhere_test")
-
+func TestSimple(t *testing.T) {
 	var testRule = `<ruleset name="Bundler.io">
 		<target host="bundler.io"/>
 		<rule from="^http:" to="https:" />
@@ -209,7 +220,6 @@ func TestRedirect(t *testing.T) {
 	base := "http://bundler.io"
 	r, mod := h(base)
 
-	log.Debugf("New: %v", r)
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://bundler.io", r)
 }
@@ -238,4 +248,12 @@ func TestWildcardSuffix(t *testing.T) {
 
 	assert.True(t, mod)
 	assert.Equal(t, "https://bundler.io", r)
+}
+
+// newHTTPS creates a new rewrite instance from a single rule set string. In
+// practice this is used for testing.
+func newHTTPS(rules string) (rewrite, map[string]*Targets) {
+	targets := make(map[string]*Targets)
+	Preprocessor.AddRuleSet([]byte(rules), targets)
+	return newRewrite(targets), targets
 }

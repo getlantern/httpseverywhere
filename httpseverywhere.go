@@ -3,9 +3,7 @@ package httpseverywhere
 import (
 	"bytes"
 	"encoding/gob"
-	"encoding/xml"
 	"regexp"
-	"strings"
 
 	"github.com/getlantern/golog"
 	"github.com/getlantern/tldextract"
@@ -16,15 +14,17 @@ var (
 	extract = tldextract.New()
 )
 
-// rewrite changes an HTTP URL to rewrite.
-type rewrite func(url string) (string, bool)
-
 // Rewrite exports the rewrite method for users of this library.
 var Rewrite = new()
 
+// rewrite changes an HTTP URL to rewrite.
+type rewrite func(url string) (string, bool)
+
+//type domainRoot string
+
 type https struct {
 	log     golog.Logger
-	targets map[string]*Rules
+	targets map[string]*Targets
 }
 
 // A rule maps the regular expression to match and the string to change it to.
@@ -48,13 +48,26 @@ type Rules struct {
 	Exclusions []*exclusion
 }
 
+// Targets contains the target hosts for the given base domain.
+type Targets struct {
+	wildcardPrefix []*regexp.Regexp
+	wildcardSuffix []*regexp.Regexp
+
+	// We use maps here to filter duplicates.
+	WildcardPrefix map[string]bool
+	WildcardSuffix map[string]bool
+	Plain          map[string]bool
+
+	Rules *Rules
+}
+
 // new creates a new rewrite instance from embedded GOB data.
 func new() rewrite {
 	data := MustAsset("targets.gob")
 	buf := bytes.NewBuffer(data)
 
 	dec := gob.NewDecoder(buf)
-	targets := make(map[string]*Rules)
+	targets := make(map[string]*Targets)
 	err := dec.Decode(&targets)
 	if err != nil {
 		log.Errorf("Could not decode: %v", err)
@@ -64,68 +77,58 @@ func new() rewrite {
 	// The compiled regular expressions aren't serialized, so we have to manually
 	// compile them.
 	for _, v := range targets {
-		for _, r := range v.Rules {
+		for _, r := range v.Rules.Rules {
 			r.from, _ = regexp.Compile(r.From)
 		}
 
-		for _, e := range v.Exclusions {
+		for _, e := range v.Rules.Exclusions {
 			e.pattern, _ = regexp.Compile(e.Pattern)
+		}
+
+		v.wildcardPrefix = make([]*regexp.Regexp, 0)
+		for pre := range v.WildcardPrefix {
+			comp, err := regexp.Compile(pre)
+			if err != nil {
+				v.wildcardPrefix = append(v.wildcardPrefix, comp)
+			}
+		}
+
+		v.wildcardSuffix = make([]*regexp.Regexp, 0)
+		for suff := range v.WildcardSuffix {
+			comp, err := regexp.Compile(suff)
+			if err != nil {
+				v.wildcardSuffix = append(v.wildcardSuffix, comp)
+			}
 		}
 	}
 	return newRewrite(targets)
 }
 
-// AddRuleSet adds the specified rule set to the map of targets. Returns
-// whether or not the rule processed correctly and whether or not the
-// target was a duplicate. Duplicates are ignored but are considered to have
-// processed correctly.
-func AddRuleSet(rules []byte, targets map[string]*Rules) (bool, int) {
-	var r Ruleset
-	xml.Unmarshal(rules, &r)
-
-	// If the rule is turned off, ignore it.
-	if len(r.Off) > 0 {
-		return false, 0
-	}
-
-	// We don't run on any platforms (aka Tor) that support mixed content, so
-	// ignore any rule that is mixedcontent-only.
-	if r.Platform == "mixedcontent" {
-		return false, 0
-	}
-
-	rs, err := ruleSetToRules(r)
-	if err != nil {
-		return false, 0
-	}
-
-	duplicates := 0
-	for _, target := range r.Target {
-		if strings.HasPrefix(target.Host, "*") {
-			// This artificially turns the target into a valid URL for processing
-			// by TLD extract.
-			urlStr := "http://" + strings.Replace(target.Host, "*", "pre", 1)
-			e := extract.Extract(urlStr)
-
-			if strings.Contains(e.Sub, ".") {
-				log.Debugf("Ingoring wildcard rule with multiple subdomains: %+v;%s\n", e, target.Host)
-				continue
-			}
-			duplicates += addRules(targets, target.Host, rs)
-		} else {
-			duplicates += addRules(targets, target.Host, rs)
+func (t *Targets) rewrite(url, domain string) (string, bool) {
+	// We basically want to apply the associated set of rules if any of the
+	// targets match the url.
+	log.Debugf("Attempting to rewrite %v", domain)
+	for k := range t.Plain {
+		if domain == k {
+			return t.Rules.rewrite(url)
 		}
 	}
-	return true, duplicates
-}
 
-func addRules(targets map[string]*Rules, host string, rules *Rules) int {
-	if _, ok := targets[host]; ok {
-		// Ignoring duplicate.
-		return 1
+	for _, pre := range t.wildcardPrefix {
+		if pre.MatchString(url) {
+			return t.Rules.rewrite(url)
+		}
 	}
-	targets[host] = rules
-	return 0
+
+	for _, suff := range t.wildcardSuffix {
+		log.Debugf("Checking %v against %v", url, suff.String())
+		if suff.MatchString(url) {
+			log.Debugf("Rewriting %v with %v", url, suff.String())
+			return t.Rules.rewrite(url)
+		}
+	}
+
+	return url, false
 }
 
 // rewrite converts the given URL to HTTPS if there is an associated rule for
@@ -138,76 +141,25 @@ func (r *Rules) rewrite(url string) (string, bool) {
 	}
 	for _, rule := range r.Rules {
 		if rule.from.MatchString(url) {
+			log.Debugf("Rewriting with rules from:\n%v\n to:\n %v\nfor URL:\n"+url, rule.From, rule.To)
 			return rule.from.ReplaceAllString(url, rule.To), true
 		}
 	}
 	return url, false
 }
 
-// newHTTPS creates a new rewrite instance from a single rule set string. In
-// practice this is used for testing.
-func newHTTPS(rules string) (rewrite, map[string]*Rules) {
-	targets := make(map[string]*Rules)
-	AddRuleSet([]byte(rules), targets)
-	return newRewrite(targets), targets
-}
-
-func newRewrite(targets map[string]*Rules) rewrite {
+func newRewrite(targets map[string]*Targets) rewrite {
 	return (&https{log: log, targets: targets}).rewrite
-}
-
-func ruleSetToRules(set Ruleset) (*Rules, error) {
-	mod := make([]*rule, 0)
-	for _, r := range set.Rule {
-		// We ignore any rules that attempt to redirect to HTTP, as they would
-		// trigger mixed content in most cases (all cases in browsers that don't
-		// allow mixed content)?
-		if r.To == "http:" {
-			continue
-		}
-		f, err := regexp.Compile(r.From)
-		if err != nil {
-			log.Debugf("Could not compile regex: %v", err)
-			return nil, err
-		}
-		mod = append(mod, &rule{From: r.From, from: f, To: r.To})
-
-	}
-	exclude := make([]*exclusion, 0)
-	for _, e := range set.Exclusion {
-		p, err := regexp.Compile(e.Pattern)
-		if err != nil {
-			log.Debugf("Could not compile regex for exclusion: %v", err)
-			return nil, err
-		}
-		exclude = append(exclude, &exclusion{Pattern: e.Pattern, pattern: p})
-	}
-	return &Rules{Rules: mod, Exclusions: exclude}, nil
 }
 
 func (h *https) rewrite(urlStr string) (string, bool) {
 	result := extract.Extract(urlStr)
-	domain := result.Root + "." + result.Tld
 
-	if rules, ok := h.targets[domain]; ok {
-		//h.log.Debugf("Got rules: %+v", rules)
-		return rules.rewrite(urlStr)
-	}
-	if rules, ok := h.targets[wildcardSuffix(result)]; ok {
-		//h.log.Debugf("Got suffix rules: %+v", rules)
-		return rules.rewrite(urlStr)
-	}
-	if rules, ok := h.targets["*."+domain]; ok {
-		//h.log.Debugf("Got prefix rules: %+v", rules)
-		return rules.rewrite(urlStr)
+	domain := result.Root + "." + result.Tld
+	log.Debugf("Checking domain %v", result.Root)
+	//var dr domainRoot = result.Root
+	if targets, ok := h.targets[result.Root]; ok {
+		return targets.rewrite(urlStr, domain)
 	}
 	return urlStr, false
-}
-
-func wildcardSuffix(result *tldextract.Result) string {
-	var base string
-	if len(result.Sub) > 0 {
-		base = result.Sub + "."
-	}
-	return base + result.Root + ".*"
 }
