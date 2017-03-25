@@ -7,8 +7,8 @@ function die() {
 
 set -e
 
-rm -rf https-everywhere
-git clone --depth 1 https://github.com/EFForg/https-everywhere.git || die "Could not clone https everywhere?"
+#rm -rf https-everywhere
+#git clone --depth 1 https://github.com/EFForg/https-everywhere.git || die "Could not clone https everywhere?"
 
 go build || die "Could not build"
 ./preprocess || die "Error preprocessing?"

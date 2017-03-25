@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/getlantern/golog"
@@ -126,7 +127,7 @@ func (p *preprocessor) AddRuleSet(rules []byte, targets map[string]*Targets) boo
 			if existing, ok := targets[result.Root]; ok {
 				existing.Plain[target.Host] = true
 			} else {
-				p.log.Debugf("Adding plain rule for %v", result.Root)
+				//p.log.Debugf("Adding plain rule for %v", result.Root)
 				p.addPlain(targets, result.Root, target.Host, p.newTargets(rs))
 			}
 		}
@@ -171,10 +172,6 @@ func (p *preprocessor) addWildcardSuffix(targets *Targets, host string) {
 	}
 	targets.WildcardSuffix[host] = true
 	targets.wildcardSuffix = append(targets.wildcardSuffix, re)
-
-	//targets.WildcardSuffix["."+host] = true
-	//targets.wildcardSuffix = append(targets.wildcardSuffix, re)
-
 }
 
 func (p *preprocessor) ruleSetToRules(set Ruleset) (*Rules, error) {
@@ -191,7 +188,19 @@ func (p *preprocessor) ruleSetToRules(set Ruleset) (*Rules, error) {
 			p.log.Debugf("Could not compile regex: %v", err)
 			return nil, err
 		}
-		mod = append(mod, &rule{From: r.From, from: f, To: r.To})
+
+		// Go handles references to matching groups in the replacement text
+		// differently from PCRE. PCRE considers $1xxx to be the first match
+		// followed by xxx, whereas in Go that's considered to be the named group
+		// "$1xxx".
+		// See: https://golang.org/pkg/regexp/#Regexp.Expand
+		normalizedTo := strings.Replace(r.To, "$1", "${1}", -1)
+		for i := 1; i < 10; i++ {
+			old := "$" + strconv.Itoa(i)
+			new := "${" + strconv.Itoa(i) + "}"
+			normalizedTo = strings.Replace(normalizedTo, old, new, -1)
+		}
+		mod = append(mod, &rule{From: r.From, from: f, To: normalizedTo})
 
 	}
 	exclude := make([]*exclusion, 0)
