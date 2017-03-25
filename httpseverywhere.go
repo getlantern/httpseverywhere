@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"regexp"
+	"time"
 
 	"github.com/getlantern/golog"
 	"github.com/getlantern/tldextract"
@@ -63,6 +64,7 @@ type Targets struct {
 
 // new creates a new rewrite instance from embedded GOB data.
 func new() rewrite {
+	start := time.Now()
 	data := MustAsset("targets.gob")
 	buf := bytes.NewBuffer(data)
 
@@ -73,6 +75,7 @@ func new() rewrite {
 		log.Errorf("Could not decode: %v", err)
 		return nil
 	}
+	log.Debugf("Loaded HTTPS Everywhere in %v", time.Now().Sub(start).String())
 
 	// The compiled regular expressions aren't serialized, so we have to manually
 	// compile them.
