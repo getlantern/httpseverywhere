@@ -99,8 +99,6 @@ func (p *preprocessor) AddRuleSet(rules []byte, targets map[string]*Targets) boo
 					result, target.Host)
 				continue
 			}
-			//rootDomain := result.Root + "." + result.Tld
-
 			// We need to make it into a valid regexp.
 			re := "." + target.Host
 			if existing, ok := targets[result.Root]; ok {
@@ -110,11 +108,9 @@ func (p *preprocessor) AddRuleSet(rules []byte, targets map[string]*Targets) boo
 				targets[result.Root] = targs
 				p.addWildcardPrefix(targs, re)
 			}
-			//p.addRules(targets, rootDomain, target.Host, p.newTargets(rs))
 		} else if strings.HasSuffix(target.Host, "*") {
 			urlStr := "http://" + strings.Replace(target.Host, "*", "au", 1)
 			result := extract.Extract(urlStr)
-			//rootDomain := result.Root + "." + result.Tld
 			if existing, ok := targets[result.Root]; ok {
 				p.addWildcardSuffix(existing, target.Host)
 			} else {
@@ -127,7 +123,6 @@ func (p *preprocessor) AddRuleSet(rules []byte, targets map[string]*Targets) boo
 			if existing, ok := targets[result.Root]; ok {
 				existing.Plain[target.Host] = true
 			} else {
-				//p.log.Debugf("Adding plain rule for %v", result.Root)
 				p.addPlain(targets, result.Root, target.Host, p.newTargets(rs))
 			}
 		}
