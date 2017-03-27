@@ -6,6 +6,50 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestRootForWildcardSuffix(t *testing.T) {
+	host := "www.siemens.com.*"
+	assert.Equal(t, "siemens", Preprocessor.rootForWildcardSuffix(host))
+
+	host = "www.google.co.*"
+	assert.Equal(t, "google", Preprocessor.rootForWildcardSuffix(host))
+
+	host = "all-inkl.*"
+	assert.Equal(t, "all-inkl", Preprocessor.rootForWildcardSuffix(host))
+
+	host = "www.airbnb.com.*"
+	assert.Equal(t, "airbnb", Preprocessor.rootForWildcardSuffix(host))
+}
+
+func TestWildcardPrefixFromGob(t *testing.T) {
+	h := new()
+	base := "http://test.googlevideo.com"
+	r, mod := h(base)
+
+	assert.True(t, mod)
+	assert.Equal(t, "https://test.googlevideo.com", r)
+}
+
+func TestWildcardPrefixFromGobMultipleSubdomains(t *testing.T) {
+	h := new()
+	base := "http://test.history.state.gov"
+	r, mod := h(base)
+
+	assert.True(t, mod)
+	assert.Equal(t, "https://test.history.state.gov", r)
+}
+
+func TestWildcardSuffixFromGob(t *testing.T) {
+	h := new()
+
+	// This is a rule set that happens to contain only suffix rules -- otherwise
+	// other rules take precedence.
+	base := "http://www.samknows.com/"
+	r, mod := h(base)
+
+	assert.True(t, mod)
+	assert.Equal(t, "https://www.samknows.com/", r)
+}
+
 func TestNewFromGOB(t *testing.T) {
 	h := new()
 

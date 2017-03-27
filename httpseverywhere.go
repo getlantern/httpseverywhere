@@ -92,6 +92,8 @@ func new() rewrite {
 		for pre := range v.WildcardPrefix {
 			comp, err := regexp.Compile(pre)
 			if err != nil {
+				log.Debugf("Error compiling? %v", err)
+			} else {
 				v.wildcardPrefix = append(v.wildcardPrefix, comp)
 			}
 		}
@@ -100,6 +102,8 @@ func new() rewrite {
 		for suff := range v.WildcardSuffix {
 			comp, err := regexp.Compile(suff)
 			if err != nil {
+				log.Debugf("Error compiling suffix, %v", err)
+			} else {
 				v.wildcardSuffix = append(v.wildcardSuffix, comp)
 			}
 		}
@@ -116,21 +120,21 @@ func (t *Targets) rewrite(url, domain string) (string, bool) {
 			return t.Rules.rewrite(url)
 		}
 	}
+	if r, done := t.matchTargets(url, t.wildcardPrefix); done {
+		return r, done
+	}
+	return t.matchTargets(url, t.wildcardSuffix)
+}
 
-	for _, pre := range t.wildcardPrefix {
+func (t *Targets) matchTargets(url string, targets []*regexp.Regexp) (string, bool) {
+	for _, pre := range targets {
 		if pre.MatchString(url) {
-			return t.Rules.rewrite(url)
+			r, done := t.Rules.rewrite(url)
+			if done {
+				return r, done
+			}
 		}
 	}
-
-	for _, suff := range t.wildcardSuffix {
-		log.Debugf("Checking %v against %v", url, suff.String())
-		if suff.MatchString(url) {
-			log.Debugf("Rewriting %v with %v", url, suff.String())
-			return t.Rules.rewrite(url)
-		}
-	}
-
 	return url, false
 }
 
@@ -144,7 +148,6 @@ func (r *Rules) rewrite(url string) (string, bool) {
 	}
 	for _, rule := range r.Rules {
 		if rule.from.MatchString(url) {
-			log.Debugf("Rewriting with rules from:\n%v\n to:\n %v\nfor URL:\n"+url, rule.From, rule.To)
 			return rule.from.ReplaceAllString(url, rule.To), true
 		}
 	}
@@ -157,10 +160,7 @@ func newRewrite(targets map[string]*Targets) rewrite {
 
 func (h *https) rewrite(urlStr string) (string, bool) {
 	result := extract.Extract(urlStr)
-
 	domain := result.Root + "." + result.Tld
-	log.Debugf("Checking domain %v", result.Root)
-	//var dr domainRoot = result.Root
 	if targets, ok := h.targets[result.Root]; ok {
 		return targets.rewrite(urlStr, domain)
 	}

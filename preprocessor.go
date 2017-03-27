@@ -64,7 +64,7 @@ func (p *preprocessor) Preprocess(dir string) {
 // whether or not the rule processed correctly and whether or not the
 // target was a duplicate. Duplicates are ignored but are considered to have
 // processed correctly.
-func (p *preprocessor) AddRuleSet(rules []byte, targets map[string]*Targets) bool {
+func (p *preprocessor) AddRuleSet(rules []byte, rootsToTargets map[string]*Targets) bool {
 	var ruleset Ruleset
 	xml.Unmarshal(rules, &ruleset)
 
@@ -94,50 +94,64 @@ func (p *preprocessor) AddRuleSet(rules []byte, targets map[string]*Targets) boo
 			urlStr := "http://" + strings.Replace(target.Host, "*", "pre", 1)
 			result := extract.Extract(urlStr)
 
-			if strings.Contains(result.Sub, ".") {
-				p.log.Debugf("Ingoring wildcard rule with multiple subdomains: %+v;%s\n",
-					result, target.Host)
-				continue
-			}
 			// We need to make it into a valid regexp.
 			re := "." + target.Host
-			if existing, ok := targets[result.Root]; ok {
+			if existing, ok := rootsToTargets[result.Root]; ok {
 				p.addWildcardPrefix(existing, re)
 			} else {
+				p.log.Debugf("Adding wildcard prefix for %v", target.Host)
 				targs := p.newTargets(rs)
-				targets[result.Root] = targs
+				rootsToTargets[result.Root] = targs
 				p.addWildcardPrefix(targs, re)
 			}
 		} else if strings.HasSuffix(target.Host, "*") {
-			urlStr := "http://" + strings.Replace(target.Host, "*", "au", 1)
-			result := extract.Extract(urlStr)
-			if existing, ok := targets[result.Root]; ok {
+			root := p.rootForWildcardSuffix(target.Host)
+			p.log.Debugf("Extracting wildcard suffix for host %v", target.Host)
+			if existing, ok := rootsToTargets[root]; ok {
+				p.log.Debugf("Adding to existing wildcard suffix targets for %v", root)
 				p.addWildcardSuffix(existing, target.Host)
 			} else {
 				targs := p.newTargets(rs)
-				targets[result.Root] = targs
+				rootsToTargets[root] = targs
 				p.addWildcardSuffix(targs, target.Host)
+				p.log.Debugf("Adding new wildcard suffix targets for %v", root)
 			}
 		} else {
 			result := extract.Extract(target.Host)
-			if existing, ok := targets[result.Root]; ok {
+			if existing, ok := rootsToTargets[result.Root]; ok {
 				existing.Plain[target.Host] = true
 			} else {
-				p.addPlain(targets, result.Root, target.Host, p.newTargets(rs))
+				p.addPlain(rootsToTargets, result.Root, target.Host, p.newTargets(rs))
 			}
 		}
 	}
 	return true
 }
 
-func (p *preprocessor) addPlain(domainToTargets map[string]*Targets,
+func (p *preprocessor) rootForWildcardSuffix(host string) string {
+	var urlStr string
+	// We have to handle this carefully because if we just replace the com.* with
+	// com.uk, for example, we won't properly extract the root domain (it will
+	// be "com")
+	if strings.HasSuffix(host, ".com.*") {
+		urlStr = "http://" + strings.Replace(host, ".com.*", ".com", 1)
+	} else {
+		urlStr = "http://" + strings.Replace(host, "*", "uk", 1)
+	}
+
+	p.log.Debugf("Extracting wildcard suffix for URL %v", urlStr)
+	result := extract.Extract(urlStr)
+	return result.Root
+}
+
+func (p *preprocessor) addPlain(rootsToTargets map[string]*Targets,
 	rootDomain, fullDomain string, targets *Targets) {
-	if t, ok := domainToTargets[rootDomain]; ok {
+	if t, ok := rootsToTargets[rootDomain]; ok {
 		t.Plain[fullDomain] = true
 		return
 	}
 	targets.Plain[fullDomain] = true
-	domainToTargets[rootDomain] = targets
+	rootsToTargets[rootDomain] = targets
 }
 
 func (p *preprocessor) addWildcardPrefix(targets *Targets, host string) {
@@ -156,15 +170,18 @@ func (p *preprocessor) addWildcardPrefix(targets *Targets, host string) {
 }
 
 func (p *preprocessor) addWildcardSuffix(targets *Targets, host string) {
-	re, err := regexp.Compile(".*" + host)
+	p.log.Debugf("Compiling wildcard suffix: %v", host)
+	re, err := regexp.Compile(host)
 	if err != nil {
 		p.log.Errorf("Could not compile regex for target host %v: %v", host, err)
 		return
 	}
-	if val, ok := targets.WildcardSuffix[host]; ok {
-		p.log.Debugf("Ignoring duplicate prefix for %v", val)
+	if _, ok := targets.WildcardSuffix[host]; ok {
+		p.log.Debugf("Ignoring duplicate suffix for %v", host)
 		return
 	}
+
+	p.log.Debugf("Adding wildcard suffix for %v", host)
 	targets.WildcardSuffix[host] = true
 	targets.wildcardSuffix = append(targets.wildcardSuffix, re)
 }
