@@ -22,7 +22,7 @@ func TestRootForWildcardSuffix(t *testing.T) {
 }
 
 func TestWildcardPrefixFromGob(t *testing.T) {
-	h := new()
+	h := newSync()
 	base := "http://test.googlevideo.com"
 	r, mod := h(base)
 
@@ -31,7 +31,7 @@ func TestWildcardPrefixFromGob(t *testing.T) {
 }
 
 func TestWildcardPrefixFromGobMultipleSubdomains(t *testing.T) {
-	h := new()
+	h := newSync()
 	base := "http://test.history.state.gov"
 	r, mod := h(base)
 
@@ -40,7 +40,7 @@ func TestWildcardPrefixFromGobMultipleSubdomains(t *testing.T) {
 }
 
 func TestWildcardSuffixFromGob(t *testing.T) {
-	h := new()
+	h := newSync()
 
 	// This is a rule set that happens to contain only suffix rules -- otherwise
 	// other rules take precedence.
@@ -52,7 +52,7 @@ func TestWildcardSuffixFromGob(t *testing.T) {
 }
 
 func TestNewFromGOB(t *testing.T) {
-	h := new()
+	h := newSync()
 
 	base := "http://name.com"
 	r, mod := h(base)
@@ -68,7 +68,7 @@ func TestNewFromGOB(t *testing.T) {
 }
 
 func TestLinkedIn(t *testing.T) {
-	h := new()
+	h := newSync()
 
 	base := "http://platform.linkedin.com/"
 	r, mod := h(base)
@@ -301,8 +301,8 @@ func newHTTPS(rules string) (rewrite, map[string]*Targets) {
 	Preprocessor.AddRuleSet([]byte(rules), hostsToTargets)
 
 	h := &https{
-		log:            golog.LoggerFor("httpseverywhere-https"),
-		hostsToTargets: hostsToTargets,
+		log: golog.LoggerFor("httpseverywhere-https"),
 	}
+	h.hostsToTargets.Store(hostsToTargets)
 	return h.rewrite, hostsToTargets
 }

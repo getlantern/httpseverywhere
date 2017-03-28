@@ -3,6 +3,7 @@ package httpseverywhere
 import (
 	"regexp"
 	"sync"
+	"sync/atomic"
 
 	"github.com/getlantern/golog"
 	"github.com/getlantern/tldextract"
@@ -14,15 +15,16 @@ var (
 )
 
 // Rewrite exports the rewrite method for users of this library.
-var Rewrite = new()
+var Rewrite = newAsync()
 
 // rewrite changes an HTTP URL to rewrite.
 type rewrite func(url string) (string, bool)
 
 type https struct {
-	log            golog.Logger
-	hostsToTargets map[string]*Targets
+	log golog.Logger
+	//hostsToTargets map[string]*Targets
 	sync.RWMutex
+	hostsToTargets atomic.Value
 }
 
 // A rule maps the regular expression to match and the string to change it to.
@@ -59,33 +61,41 @@ type Targets struct {
 	Rules *Rules
 }
 
-// new creates a new rewrite instance from embedded GOB data.
-func new() rewrite {
+// new creates a new rewrite instance from embedded GOB data with asynchronous
+// loading of the rule sets to allow the caller to about around a 2 second
+// delay.
+func newAsync() rewrite {
 	h := &https{
-		log:            golog.LoggerFor("httpseverywhere-https"),
-		hostsToTargets: make(map[string]*Targets),
+		log: golog.LoggerFor("httpseverywhere-https"),
 	}
 
+	h.hostsToTargets.Store(make(map[string]*Targets))
 	go func() {
 		d := newDeserializer()
 		temp := d.newHostsToTargets()
-		h.Lock()
-		h.hostsToTargets = temp
-		h.Unlock()
+		h.hostsToTargets.Store(temp)
 	}()
 
+	return h.rewrite
+}
+
+// newSync creates a new rewrite instance from embedded GOB data.
+func newSync() rewrite {
+	h := &https{
+		log: golog.LoggerFor("httpseverywhere-https"),
+	}
+
+	d := newDeserializer()
+	h.hostsToTargets.Store(d.newHostsToTargets())
 	return h.rewrite
 }
 
 func (h *https) rewrite(urlStr string) (string, bool) {
 	result := extract.Extract(urlStr)
 	domain := result.Root + "." + result.Tld
-	h.RLock()
-	if targets, ok := h.hostsToTargets[result.Root]; ok {
-		h.RUnlock()
+	if targets, ok := h.hostsToTargets.Load().(map[string]*Targets)[result.Root]; ok {
 		return targets.rewrite(urlStr, domain)
 	}
-	h.RUnlock()
 	return urlStr, false
 }
 
