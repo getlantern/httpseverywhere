@@ -2,7 +2,6 @@ package httpseverywhere
 
 import (
 	"regexp"
-	"sync"
 	"sync/atomic"
 
 	"github.com/getlantern/golog"
@@ -21,9 +20,7 @@ var Rewrite = newAsync()
 type rewrite func(url string) (string, bool)
 
 type https struct {
-	log golog.Logger
-	//hostsToTargets map[string]*Targets
-	sync.RWMutex
+	// This is a map of root host names to Targets -- map[string]*Targets
 	hostsToTargets atomic.Value
 }
 
@@ -65,9 +62,7 @@ type Targets struct {
 // loading of the rule sets to allow the caller to about around a 2 second
 // delay.
 func newAsync() rewrite {
-	h := &https{
-		log: golog.LoggerFor("httpseverywhere-https"),
-	}
+	h := &https{}
 
 	h.hostsToTargets.Store(make(map[string]*Targets))
 	go func() {
@@ -81,10 +76,7 @@ func newAsync() rewrite {
 
 // newSync creates a new rewrite instance from embedded GOB data.
 func newSync() rewrite {
-	h := &https{
-		log: golog.LoggerFor("httpseverywhere-https"),
-	}
-
+	h := &https{}
 	d := newDeserializer()
 	h.hostsToTargets.Store(d.newHostsToTargets())
 	return h.rewrite

@@ -3,7 +3,6 @@ package httpseverywhere
 import (
 	"testing"
 
-	"github.com/getlantern/golog"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -300,9 +299,7 @@ func newHTTPS(rules string) (rewrite, map[string]*Targets) {
 	hostsToTargets := make(map[string]*Targets)
 	Preprocessor.AddRuleSet([]byte(rules), hostsToTargets)
 
-	h := &https{
-		log: golog.LoggerFor("httpseverywhere-https"),
-	}
+	h := &https{}
 	h.hostsToTargets.Store(hostsToTargets)
 	return h.rewrite, hostsToTargets
 }
