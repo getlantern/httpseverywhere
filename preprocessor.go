@@ -89,19 +89,21 @@ func (p *preprocessor) AddRuleSet(rules []byte, rootsToTargets map[string]*Targe
 		// The host roots key the targets map so we can quickly determine if
 		// there are any rules at all for a given root in O(1) time.
 		if strings.HasPrefix(target.Host, "*") {
-			// This artificially turns the target into a valid URL for processing
-			// by TLD extract.
-			urlStr := "http://" + strings.Replace(target.Host, "*", "pre", 1)
-			result := extract.Extract(urlStr)
+			// This artificially turns the target into a valid URL for processing.
+			normalizedURL := strings.Replace(target.Host, "*", "pre", 1)
+			_, root, err := extractURLAndRoot(normalizedURL)
+			if err != nil {
+				return false
+			}
 
 			// We need to make it into a valid regexp.
 			re := "." + target.Host
-			if existing, ok := rootsToTargets[result.Root]; ok {
+			if existing, ok := rootsToTargets[root]; ok {
 				p.addWildcardPrefix(existing, re)
 			} else {
 				p.log.Debugf("Adding wildcard prefix for %v", target.Host)
 				targs := p.newTargets(rs)
-				rootsToTargets[result.Root] = targs
+				rootsToTargets[root] = targs
 				p.addWildcardPrefix(targs, re)
 			}
 		} else if strings.HasSuffix(target.Host, "*") {
@@ -117,11 +119,17 @@ func (p *preprocessor) AddRuleSet(rules []byte, rootsToTargets map[string]*Targe
 				p.log.Debugf("Adding new wildcard suffix targets for %v", root)
 			}
 		} else {
-			result := extract.Extract(target.Host)
-			if existing, ok := rootsToTargets[result.Root]; ok {
+			_, root, err := extractURLAndRoot(target.Host)
+			if err != nil {
+				return false
+			}
+			if len(root) == 0 {
+				p.log.Debugf("Found empty string for: %v", target.Host)
+			}
+			if existing, ok := rootsToTargets[root]; ok {
 				existing.Plain[target.Host] = true
 			} else {
-				p.addPlain(rootsToTargets, result.Root, target.Host, p.newTargets(rs))
+				p.addPlain(rootsToTargets, root, target.Host, p.newTargets(rs))
 			}
 		}
 	}
@@ -134,14 +142,17 @@ func (p *preprocessor) rootForWildcardSuffix(host string) string {
 	// com.uk, for example, we won't properly extract the root domain (it will
 	// be "com")
 	if strings.HasSuffix(host, ".com.*") {
-		urlStr = "http://" + strings.Replace(host, ".com.*", ".com", 1)
+		urlStr = strings.Replace(host, ".com.*", ".com", 1)
 	} else {
-		urlStr = "http://" + strings.Replace(host, "*", "uk", 1)
+		urlStr = strings.Replace(host, "*", "uk", 1)
 	}
 
-	p.log.Debugf("Extracting wildcard suffix for URL %v", urlStr)
-	result := extract.Extract(urlStr)
-	return result.Root
+	//p.log.Debugf("Extracting wildcard suffix for URL %v", urlStr)
+	_, root, err := extractURLAndRoot(urlStr)
+	if err != nil {
+		return urlStr
+	}
+	return root
 }
 
 func (p *preprocessor) addPlain(rootsToTargets map[string]*Targets,
@@ -160,8 +171,8 @@ func (p *preprocessor) addWildcardPrefix(targets *Targets, host string) {
 		p.log.Errorf("Could not compile regex for target host %v: %v", host, err)
 		return
 	}
-	if val, ok := targets.WildcardPrefix[host]; ok {
-		p.log.Debugf("Ignoring duplicate prefix for %v", val)
+	if _, ok := targets.WildcardPrefix[host]; ok {
+		p.log.Debugf("Ignoring duplicate prefix for %v", host)
 		return
 	}
 	targets.WildcardPrefix[host] = true

@@ -6,6 +6,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestExtractURLAndRoot(t *testing.T) {
+	_, root, _ := extractURLAndRoot("http://stackoverflow.com/users/")
+	assert.Equal(t, "stackoverflow", root)
+
+	_, root, _ = extractURLAndRoot("stackoverflow.com/users/")
+	assert.Equal(t, "stackoverflow", root)
+
+	_, root, _ = extractURLAndRoot("fr.wikipedia.org")
+	assert.Equal(t, "wikipedia", root)
+}
+
 func TestRootForWildcardSuffix(t *testing.T) {
 	host := "www.siemens.com.*"
 	assert.Equal(t, "siemens", Preprocessor.rootForWildcardSuffix(host))

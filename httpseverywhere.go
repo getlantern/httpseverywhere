@@ -1,16 +1,18 @@
 package httpseverywhere
 
 import (
+	"net/url"
 	"regexp"
+	"strings"
 	"sync/atomic"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/getlantern/golog"
-	"github.com/getlantern/tldextract"
 )
 
 var (
-	log     = golog.LoggerFor("httpseverywhere")
-	extract = tldextract.New()
+	log = golog.LoggerFor("httpseverywhere")
 )
 
 // Rewrite exports the rewrite method for users of this library.
@@ -83,18 +85,59 @@ func newSync() rewrite {
 }
 
 func (h *https) rewrite(urlStr string) (string, bool) {
-	result := extract.Extract(urlStr)
-	domain := result.Root + "." + result.Tld
-	if targets, ok := h.hostsToTargets.Load().(map[string]*Targets)[result.Root]; ok {
-		return targets.rewrite(urlStr, domain)
+	if strings.HasPrefix(urlStr, "https") {
+		return urlStr, false
+	}
+	if !strings.HasPrefix(urlStr, "http://") {
+		return urlStr, false
+	}
+	url, root, err := extractURLAndRoot(urlStr)
+	if err != nil {
+		return urlStr, false
+	}
+	if len(root) == 0 {
+		log.Error("Root is the empty string!")
+		return urlStr, false
+	}
+	if targets, ok := h.hostsToTargets.Load().(map[string]*Targets)[root]; ok {
+		return targets.rewrite(urlStr, url.Host)
 	}
 	return urlStr, false
+}
+
+func extractURLAndRoot(originalURL string) (*url.URL, string, error) {
+	// Just normalize it as a url with the http protocol
+	var urlStr string
+	if !strings.HasPrefix(originalURL, "http://") {
+		urlStr = "http://" + originalURL
+	} else {
+		urlStr = originalURL
+	}
+	url, err := url.Parse(urlStr)
+	if err != nil {
+		log.Errorf("Could not parse URL %v with error %v", urlStr, err)
+		return nil, urlStr, err
+	}
+
+	tld, _ := publicsuffix.PublicSuffix(url.Host)
+
+	// Because some TLDs such as "co.uk" include "."s, we strip the TLD prior
+	// to stripping subdomains.
+	noTLD := strings.TrimSuffix(url.Host, "."+tld)
+	root := stripSubdomains(noTLD)
+	return url, root, nil
+}
+
+func stripSubdomains(host string) string {
+	host = strings.TrimSpace(host)
+	parts := strings.Split(host, ".")
+	return parts[len(parts)-1]
 }
 
 func (t *Targets) rewrite(url, domain string) (string, bool) {
 	// We basically want to apply the associated set of rules if any of the
 	// targets match the url.
-	log.Debugf("Attempting to rewrite %v", domain)
+	log.Debugf("Attempting to rewrite url %v and domain %v", url, domain)
 	for k := range t.Plain {
 		if domain == k {
 			return t.Rules.rewrite(url)
