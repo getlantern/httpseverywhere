@@ -3,6 +3,7 @@ package httpseverywhere
 import (
 	"testing"
 
+	"github.com/getlantern/golog"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -294,10 +295,14 @@ func TestWildcardSuffix(t *testing.T) {
 	assert.Equal(t, "https://bundler.io", r)
 }
 
-// newHTTPS creates a new rewrite instance from a single rule set string. In
-// practice this is used for testing.
+// newHTTPS creates a new rewrite instance from a single rule set string.
 func newHTTPS(rules string) (rewrite, map[string]*Targets) {
-	targets := make(map[string]*Targets)
-	Preprocessor.AddRuleSet([]byte(rules), targets)
-	return newRewrite(targets), targets
+	hostsToTargets := make(map[string]*Targets)
+	Preprocessor.AddRuleSet([]byte(rules), hostsToTargets)
+
+	h := &https{
+		log:            golog.LoggerFor("httpseverywhere-https"),
+		hostsToTargets: hostsToTargets,
+	}
+	return h.rewrite, hostsToTargets
 }

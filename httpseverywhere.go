@@ -1,10 +1,8 @@
 package httpseverywhere
 
 import (
-	"bytes"
-	"encoding/gob"
 	"regexp"
-	"time"
+	"sync"
 
 	"github.com/getlantern/golog"
 	"github.com/getlantern/tldextract"
@@ -21,11 +19,10 @@ var Rewrite = new()
 // rewrite changes an HTTP URL to rewrite.
 type rewrite func(url string) (string, bool)
 
-//type domainRoot string
-
 type https struct {
-	log     golog.Logger
-	targets map[string]*Targets
+	log            golog.Logger
+	hostsToTargets map[string]*Targets
+	sync.RWMutex
 }
 
 // A rule maps the regular expression to match and the string to change it to.
@@ -64,51 +61,32 @@ type Targets struct {
 
 // new creates a new rewrite instance from embedded GOB data.
 func new() rewrite {
-	start := time.Now()
-	data := MustAsset("targets.gob")
-	buf := bytes.NewBuffer(data)
-
-	dec := gob.NewDecoder(buf)
-	targets := make(map[string]*Targets)
-	err := dec.Decode(&targets)
-	if err != nil {
-		log.Errorf("Could not decode: %v", err)
-		return nil
+	h := &https{
+		log:            golog.LoggerFor("httpseverywhere-https"),
+		hostsToTargets: make(map[string]*Targets),
 	}
-	log.Debugf("Loaded HTTPS Everywhere in %v", time.Now().Sub(start).String())
 
-	// The compiled regular expressions aren't serialized, so we have to manually
-	// compile them.
-	for _, v := range targets {
-		for _, r := range v.Rules.Rules {
-			r.from, _ = regexp.Compile(r.From)
-		}
+	go func() {
+		d := newDeserializer()
+		temp := d.newHostsToTargets()
+		h.Lock()
+		h.hostsToTargets = temp
+		h.Unlock()
+	}()
 
-		for _, e := range v.Rules.Exclusions {
-			e.pattern, _ = regexp.Compile(e.Pattern)
-		}
+	return h.rewrite
+}
 
-		v.wildcardPrefix = make([]*regexp.Regexp, 0)
-		for pre := range v.WildcardPrefix {
-			comp, err := regexp.Compile(pre)
-			if err != nil {
-				log.Debugf("Error compiling? %v", err)
-			} else {
-				v.wildcardPrefix = append(v.wildcardPrefix, comp)
-			}
-		}
-
-		v.wildcardSuffix = make([]*regexp.Regexp, 0)
-		for suff := range v.WildcardSuffix {
-			comp, err := regexp.Compile(suff)
-			if err != nil {
-				log.Debugf("Error compiling suffix, %v", err)
-			} else {
-				v.wildcardSuffix = append(v.wildcardSuffix, comp)
-			}
-		}
+func (h *https) rewrite(urlStr string) (string, bool) {
+	result := extract.Extract(urlStr)
+	domain := result.Root + "." + result.Tld
+	h.RLock()
+	if targets, ok := h.hostsToTargets[result.Root]; ok {
+		h.RUnlock()
+		return targets.rewrite(urlStr, domain)
 	}
-	return newRewrite(targets)
+	h.RUnlock()
+	return urlStr, false
 }
 
 func (t *Targets) rewrite(url, domain string) (string, bool) {
@@ -152,17 +130,4 @@ func (r *Rules) rewrite(url string) (string, bool) {
 		}
 	}
 	return url, false
-}
-
-func newRewrite(targets map[string]*Targets) rewrite {
-	return (&https{log: log, targets: targets}).rewrite
-}
-
-func (h *https) rewrite(urlStr string) (string, bool) {
-	result := extract.Extract(urlStr)
-	domain := result.Root + "." + result.Tld
-	if targets, ok := h.targets[result.Root]; ok {
-		return targets.rewrite(urlStr, domain)
-	}
-	return urlStr, false
 }
