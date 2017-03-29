@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/net/publicsuffix"
 
@@ -25,6 +26,10 @@ type rewrite func(url *url.URL) (string, bool)
 type https struct {
 	// This is a map of root host names to Targets -- map[string]*Targets
 	hostsToTargets atomic.Value
+	runs           int64
+	totalTime      int64
+	max            int64
+	maxHost        string
 }
 
 // A rule maps the regular expression to match and the string to change it to.
@@ -91,6 +96,7 @@ func (h *https) rewrite(url *url.URL) (string, bool) {
 	if url.Scheme != "http" {
 		return "", false
 	}
+	start := time.Now()
 	host, root := extractHostAndRoot(url)
 
 	if len(root) == 0 {
@@ -98,9 +104,24 @@ func (h *https) rewrite(url *url.URL) (string, bool) {
 		return "", false
 	}
 	if targets, ok := h.hostsToTargets.Load().(map[string]*Targets)[root]; ok {
-		return targets.rewrite(url, host)
+		https, done := targets.rewrite(url, host)
+		h.addTiming(time.Now().Sub(start), url.String())
+
+		return https, done
 	}
 	return "", false
+}
+
+func (h *https) addTiming(dur time.Duration, host string) {
+	nan := dur.Nanoseconds()
+	h.runs++
+	h.totalTime += nan
+	if nan > h.max {
+		h.max = nan
+		h.maxHost = host
+	}
+	log.Debugf("Average running time: %v", h.totalTime/h.runs)
+	log.Debugf("Max running time: %v for host:", h.max, h.maxHost)
 }
 
 func extractHostAndRoot(url *url.URL) (string, string) {
