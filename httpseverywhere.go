@@ -1,6 +1,7 @@
 package httpseverywhere
 
 import (
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -88,7 +89,7 @@ func (h *https) rewrite(urlStr string) (string, bool) {
 	if strings.HasPrefix(urlStr, "https") {
 		return urlStr, false
 	}
-	if !strings.HasPrefix(urlStr, "http://") {
+	if !strings.HasPrefix(urlStr, "http") {
 		return urlStr, false
 	}
 	url, root, err := extractURLAndRoot(urlStr)
@@ -119,13 +120,23 @@ func extractURLAndRoot(originalURL string) (*url.URL, string, error) {
 		return nil, urlStr, err
 	}
 
-	tld, _ := publicsuffix.PublicSuffix(url.Host)
+	host := withoutPort(url.Host)
+
+	tld, _ := publicsuffix.PublicSuffix(host)
 
 	// Because some TLDs such as "co.uk" include "."s, we strip the TLD prior
 	// to stripping subdomains.
-	noTLD := strings.TrimSuffix(url.Host, "."+tld)
+	noTLD := strings.TrimSuffix(host, "."+tld)
 	root := stripSubdomains(noTLD)
 	return url, root, nil
+}
+
+func withoutPort(hostport string) string {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return hostport
+	}
+	return host
 }
 
 func stripSubdomains(host string) string {
