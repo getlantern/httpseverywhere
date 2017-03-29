@@ -115,7 +115,7 @@ func (h *https) rewrite(url *url.URL) (string, bool) {
 }
 
 func (h *https) addTiming(dur time.Duration, host string) {
-	nan := dur.Nanoseconds() / 1000000
+	nan := dur.Nanoseconds() / int64(time.Millisecond)
 	h.statM.Lock()
 	h.runs++
 	h.totalTime += nan
