@@ -20,7 +20,7 @@ var (
 var Rewrite = newAsync()
 
 // rewrite changes an HTTP URL to rewrite.
-type rewrite func(url string) (string, bool)
+type rewrite func(url *url.URL) (string, bool)
 
 type https struct {
 	// This is a map of root host names to Targets -- map[string]*Targets
@@ -50,13 +50,15 @@ type Rules struct {
 
 // Targets contains the target hosts for the given base domain.
 type Targets struct {
+	Plain map[string]bool
+
 	wildcardPrefix []*regexp.Regexp
 	wildcardSuffix []*regexp.Regexp
 
-	// We use maps here to filter duplicates.
+	// We use maps here to filter duplicates. Note these are only used in
+	// preprocessing and in deserialization.
 	WildcardPrefix map[string]bool
 	WildcardSuffix map[string]bool
-	Plain          map[string]bool
 
 	Rules *Rules
 }
@@ -85,50 +87,34 @@ func newSync() rewrite {
 	return h.rewrite
 }
 
-func (h *https) rewrite(urlStr string) (string, bool) {
-	if strings.HasPrefix(urlStr, "https") {
-		return urlStr, false
+func (h *https) rewrite(url *url.URL) (string, bool) {
+	if url.Scheme != "http" {
+		return "", false
 	}
-	if !strings.HasPrefix(urlStr, "http") {
-		return urlStr, false
-	}
-	url, root, err := extractURLAndRoot(urlStr)
-	if err != nil {
-		return urlStr, false
-	}
+	host, root := extractHostAndRoot(url)
+
 	if len(root) == 0 {
 		log.Error("Root is the empty string!")
-		return urlStr, false
+		return "", false
 	}
 	if targets, ok := h.hostsToTargets.Load().(map[string]*Targets)[root]; ok {
-		return targets.rewrite(urlStr, url.Host)
+		return targets.rewrite(url, host)
 	}
-	return urlStr, false
+	return "", false
 }
 
-func extractURLAndRoot(originalURL string) (*url.URL, string, error) {
-	// Just normalize it as a url with the http protocol
-	var urlStr string
-	if !strings.HasPrefix(originalURL, "http://") {
-		urlStr = "http://" + originalURL
-	} else {
-		urlStr = originalURL
-	}
-	url, err := url.Parse(urlStr)
-	if err != nil {
-		log.Errorf("Could not parse URL %v with error %v", urlStr, err)
-		return nil, urlStr, err
-	}
-
+func extractHostAndRoot(url *url.URL) (string, string) {
 	host := withoutPort(url.Host)
 
+	// We ignore the second return value which is just a bool indicating whether
+	// it's an official ICANN TLD.
 	tld, _ := publicsuffix.PublicSuffix(host)
 
 	// Because some TLDs such as "co.uk" include "."s, we strip the TLD prior
 	// to stripping subdomains.
 	noTLD := strings.TrimSuffix(host, "."+tld)
 	root := stripSubdomains(noTLD)
-	return url, root, nil
+	return host, root
 }
 
 func withoutPort(hostport string) string {
@@ -145,13 +131,16 @@ func stripSubdomains(host string) string {
 	return parts[len(parts)-1]
 }
 
-func (t *Targets) rewrite(url, domain string) (string, bool) {
+func (t *Targets) rewrite(originalURL *url.URL, host string) (string, bool) {
 	// We basically want to apply the associated set of rules if any of the
 	// targets match the url.
-	log.Debugf("Attempting to rewrite url %v and domain %v", url, domain)
+	url := originalURL.String()
+	log.Debugf("Attempting to rewrite url %v", url)
 	for k := range t.Plain {
-		if domain == k {
-			return t.Rules.rewrite(url)
+		if host == k {
+			if r, done := t.Rules.rewrite(url); done {
+				return r, done
+			}
 		}
 	}
 	if r, done := t.matchTargets(url, t.wildcardPrefix); done {
@@ -163,13 +152,12 @@ func (t *Targets) rewrite(url, domain string) (string, bool) {
 func (t *Targets) matchTargets(url string, targets []*regexp.Regexp) (string, bool) {
 	for _, pre := range targets {
 		if pre.MatchString(url) {
-			r, done := t.Rules.rewrite(url)
-			if done {
+			if r, done := t.Rules.rewrite(url); done {
 				return r, done
 			}
 		}
 	}
-	return url, false
+	return "", false
 }
 
 // rewrite converts the given URL to HTTPS if there is an associated rule for
@@ -177,7 +165,7 @@ func (t *Targets) matchTargets(url string, targets []*regexp.Regexp) (string, bo
 func (r *Rules) rewrite(url string) (string, bool) {
 	for _, exclude := range r.Exclusions {
 		if exclude.pattern.MatchString(url) {
-			return url, false
+			return "", false
 		}
 	}
 	for _, rule := range r.Rules {
@@ -185,5 +173,5 @@ func (r *Rules) rewrite(url string) (string, bool) {
 			return rule.from.ReplaceAllString(url, rule.To), true
 		}
 	}
-	return url, false
+	return "", false
 }

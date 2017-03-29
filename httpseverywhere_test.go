@@ -1,20 +1,16 @@
 package httpseverywhere
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestExtractURLAndRoot(t *testing.T) {
-	_, root, _ := extractURLAndRoot("http://stackoverflow.com/users/")
+	url, _ := url.Parse("http://stackoverflow.com/users/")
+	_, root := extractHostAndRoot(url)
 	assert.Equal(t, "stackoverflow", root)
-
-	_, root, _ = extractURLAndRoot("stackoverflow.com/users/")
-	assert.Equal(t, "stackoverflow", root)
-
-	_, root, _ = extractURLAndRoot("fr.wikipedia.org")
-	assert.Equal(t, "wikipedia", root)
 }
 
 func TestRootForWildcardSuffix(t *testing.T) {
@@ -34,7 +30,7 @@ func TestRootForWildcardSuffix(t *testing.T) {
 func TestWildcardPrefixFromGob(t *testing.T) {
 	h := newSync()
 	base := "http://test.googlevideo.com"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod)
 	assert.Equal(t, "https://test.googlevideo.com", r)
@@ -43,7 +39,7 @@ func TestWildcardPrefixFromGob(t *testing.T) {
 func TestWildcardPrefixFromGobMultipleSubdomains(t *testing.T) {
 	h := newSync()
 	base := "http://test.history.state.gov"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod)
 	assert.Equal(t, "https://test.history.state.gov", r)
@@ -55,7 +51,7 @@ func TestWildcardSuffixFromGob(t *testing.T) {
 	// This is a rule set that happens to contain only suffix rules -- otherwise
 	// other rules take precedence.
 	base := "http://www.samknows.com/"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod)
 	assert.Equal(t, "https://www.samknows.com/", r)
@@ -65,13 +61,13 @@ func TestNewFromGOB(t *testing.T) {
 	h := newSync()
 
 	base := "http://name.com"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://name.com", r)
 
 	base = "http://support.name.com"
-	r, mod = h(base)
+	r, mod = h(toURL(base))
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://support.name.com", r)
@@ -81,7 +77,7 @@ func TestLinkedIn(t *testing.T) {
 	h := newSync()
 
 	base := "http://platform.linkedin.com/"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod)
 	assert.Equal(t, "https://platform.linkedin.com/", r)
@@ -100,16 +96,16 @@ func TestMixedContent(t *testing.T) {
 
 	h, _ := newHTTPS(testRule)
 	base := "http://rabbitmq.com"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.False(t, mod, "should NOT have been modified to https")
-	assert.Equal(t, "http://rabbitmq.com", r)
+	assert.Equal(t, "", r)
 
 	base = "http://www.rabbitmq.com"
-	r, mod = h(base)
+	r, mod = h(toURL(base))
 
 	assert.False(t, mod, "should NOT have been modified to https")
-	assert.Equal(t, "http://www.rabbitmq.com", r)
+	assert.Equal(t, "", r)
 }
 
 func TestIgnoreHTTPRedirect(t *testing.T) {
@@ -122,10 +118,10 @@ func TestIgnoreHTTPRedirect(t *testing.T) {
 
 	h, _ := newHTTPS(testRule)
 	base := "https://stackoverflow.com/users/authenticate/"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.False(t, mod, "should NOT have been modified FROM https")
-	assert.Equal(t, "https://stackoverflow.com/users/authenticate/", r)
+	assert.Equal(t, "", r)
 
 }
 
@@ -141,24 +137,24 @@ func TestExclusions(t *testing.T) {
 
 	h, _ := newHTTPS(testRule)
 	base := "http://stackoverflow.com/users/authenticate/"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.False(t, mod, "should NOT have been modified to https")
-	assert.Equal(t, "http://stackoverflow.com/users/authenticate/", r)
+	assert.Equal(t, "", r)
 
 	// Test when we don't match the exclusion string.
 	base = "http://stackoverflow.com/users/"
-	r, mod = h(base)
+	r, mod = h(toURL(base))
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://stackoverflow.com/users/", r)
 
 	// Test when we don't match the exclusion string or any rules
 	base = "https://stackoverflow.com/users/"
-	r, mod = h(base)
+	r, mod = h(toURL(base))
 
 	assert.False(t, mod, "already HTTPS")
-	assert.Equal(t, "https://stackoverflow.com/users/", r)
+	assert.Equal(t, "", r)
 }
 
 func TestDefaultOff(t *testing.T) {
@@ -172,16 +168,16 @@ func TestDefaultOff(t *testing.T) {
 
 	h, _ := newHTTPS(testRule)
 	base := "http://rabbitmq.com"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.False(t, mod, "should NOT have been modified to https")
-	assert.Equal(t, "http://rabbitmq.com", r)
+	assert.Equal(t, "", r)
 
 	base = "http://www.rabbitmq.com"
-	r, mod = h(base)
+	r, mod = h(toURL(base))
 
 	assert.False(t, mod, "should NOT have been modified to https")
-	assert.Equal(t, "http://www.rabbitmq.com", r)
+	assert.Equal(t, "", r)
 
 }
 
@@ -194,7 +190,7 @@ func TestComplex(t *testing.T) {
 </ruleset>`
 	h, _ := newHTTPS(testRule)
 	base := "http://fr.wikipedia.org/wiki/Chose"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://secure.wikimedia.org/wikipedia/fr/wiki/Chose", r)
@@ -212,19 +208,19 @@ func TestMultipleTargets(t *testing.T) {
 
 	h, _ := newHTTPS(testRule)
 	base := "http://rabbitmq.com"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://rabbitmq.com", r)
 
 	base = "http://www.rabbitmq.com"
-	r, mod = h(base)
+	r, mod = h(toURL(base))
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://www.rabbitmq.com", r)
 
 	base = "http://rabbitmq.net"
-	r, mod = h(base)
+	r, mod = h(toURL(base))
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://rabbitmq.net", r)
@@ -240,10 +236,10 @@ func TestIgnoreMultipleSubdomains(t *testing.T) {
 
 	h, _ := newHTTPS(testRule)
 	base := "http://rabbitmq.com"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.False(t, mod, "should NOT have been modified to https")
-	assert.Equal(t, "http://rabbitmq.com", r)
+	assert.Equal(t, "", r)
 }
 
 func TestDuplicateTargets(t *testing.T) {
@@ -256,7 +252,7 @@ func TestDuplicateTargets(t *testing.T) {
 
 	h, targets := newHTTPS(testRule)
 	base := "http://rabbitmq.com"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://rabbitmq.com", r)
@@ -273,7 +269,7 @@ func TestSimple(t *testing.T) {
 	</ruleset>`
 	h, _ := newHTTPS(testRule)
 	base := "http://bundler.io"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod, "should have been modified to https")
 	assert.Equal(t, "https://bundler.io", r)
@@ -286,7 +282,7 @@ func TestWildcardPrefix(t *testing.T) {
 	</ruleset>`
 	h, _ := newHTTPS(rule)
 	base := "http://subdomain.bundler.io"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod)
 	assert.Equal(t, "https://subdomain.bundler.io", r)
@@ -299,7 +295,7 @@ func TestWildcardSuffix(t *testing.T) {
 	</ruleset>`
 	h, _ := newHTTPS(rule)
 	base := "http://bundler.io"
-	r, mod := h(base)
+	r, mod := h(toURL(base))
 
 	assert.True(t, mod)
 	assert.Equal(t, "https://bundler.io", r)
@@ -313,4 +309,9 @@ func newHTTPS(rules string) (rewrite, map[string]*Targets) {
 	h := &https{}
 	h.hostsToTargets.Store(hostsToTargets)
 	return h.rewrite, hostsToTargets
+}
+
+func toURL(urlStr string) *url.URL {
+	u, _ := url.Parse(urlStr)
+	return u
 }

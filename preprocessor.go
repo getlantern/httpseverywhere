@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"encoding/xml"
 	"io/ioutil"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -89,9 +90,8 @@ func (p *preprocessor) AddRuleSet(rules []byte, rootsToTargets map[string]*Targe
 		// The host roots key the targets map so we can quickly determine if
 		// there are any rules at all for a given root in O(1) time.
 		if strings.HasPrefix(target.Host, "*") {
-			// This artificially turns the target into a valid URL for processing.
-			normalizedURL := strings.Replace(target.Host, "*", "pre", 1)
-			_, root, err := extractURLAndRoot(normalizedURL)
+
+			root, err := p.extractRoot(strings.Replace(target.Host, "*", "pre", 1))
 			if err != nil {
 				return false
 			}
@@ -119,7 +119,7 @@ func (p *preprocessor) AddRuleSet(rules []byte, rootsToTargets map[string]*Targe
 				p.log.Debugf("Adding new wildcard suffix targets for %v", root)
 			}
 		} else {
-			_, root, err := extractURLAndRoot(target.Host)
+			root, err := p.extractRoot(target.Host)
 			if err != nil {
 				return false
 			}
@@ -136,6 +136,18 @@ func (p *preprocessor) AddRuleSet(rules []byte, rootsToTargets map[string]*Targe
 	return true
 }
 
+func (p *preprocessor) extractRoot(host string) (string, error) {
+	// This artificially turns the target into a valid URL for processing.
+	normalizedURL := "http://" + host
+	url, err := url.Parse(normalizedURL)
+	if err != nil {
+		p.log.Errorf("Could not parse URL: %v with error %v", url, err)
+		return "", err
+	}
+	_, root := extractHostAndRoot(url)
+	return root, nil
+}
+
 func (p *preprocessor) rootForWildcardSuffix(host string) string {
 	var urlStr string
 	// We have to handle this carefully because if we just replace the com.* with
@@ -144,11 +156,12 @@ func (p *preprocessor) rootForWildcardSuffix(host string) string {
 	if strings.HasSuffix(host, ".com.*") {
 		urlStr = strings.Replace(host, ".com.*", ".com", 1)
 	} else {
+		// We just use uk here to make it a valid suffix
 		urlStr = strings.Replace(host, "*", "uk", 1)
 	}
 
 	//p.log.Debugf("Extracting wildcard suffix for URL %v", urlStr)
-	_, root, err := extractURLAndRoot(urlStr)
+	root, err := p.extractRoot(urlStr)
 	if err != nil {
 		return urlStr
 	}
@@ -206,6 +219,7 @@ func (p *preprocessor) ruleSetToRules(set Ruleset) (*Rules, error) {
 		if r.To == "http:" {
 			continue
 		}
+
 		f, err := regexp.Compile(r.From)
 		if err != nil {
 			p.log.Debugf("Could not compile regex: %v", err)
