@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,6 +31,7 @@ type https struct {
 	totalTime      int64
 	max            int64
 	maxHost        string
+	statM          sync.RWMutex
 }
 
 // A rule maps the regular expression to match and the string to change it to.
@@ -114,14 +116,19 @@ func (h *https) rewrite(url *url.URL) (string, bool) {
 
 func (h *https) addTiming(dur time.Duration, host string) {
 	nan := dur.Nanoseconds()
+	h.statM.Lock()
 	h.runs++
 	h.totalTime += nan
 	if nan > h.max {
 		h.max = nan
 		h.maxHost = host
 	}
+	h.statM.Unlock()
+
+	h.statM.RLock()
 	log.Debugf("Average running time: %v", h.totalTime/h.runs)
 	log.Debugf("Max running time: %v for host:", h.max, h.maxHost)
+	h.statM.RUnlock()
 }
 
 func extractHostAndRoot(url *url.URL) (string, string) {
