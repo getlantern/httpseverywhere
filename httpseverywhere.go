@@ -115,7 +115,7 @@ func (h *https) rewrite(url *url.URL) (string, bool) {
 }
 
 func (h *https) addTiming(dur time.Duration, host string) {
-	nan := dur.Nanoseconds()
+	nan := dur.Nanoseconds() / 1000
 	h.statM.Lock()
 	h.runs++
 	h.totalTime += nan
@@ -126,8 +126,9 @@ func (h *https) addTiming(dur time.Duration, host string) {
 	h.statM.Unlock()
 
 	h.statM.RLock()
-	log.Debugf("Average running time: %v", h.totalTime/h.runs)
-	log.Debugf("Max running time: %v for host:", h.max, h.maxHost)
+
+	log.Debugf("Average running time: %vms", h.totalTime/h.runs)
+	log.Debugf("Max running time: %vms for host: %v", h.max, h.maxHost)
 	h.statM.RUnlock()
 }
 
