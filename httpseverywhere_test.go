@@ -311,6 +311,16 @@ func newHTTPS(rules string) (rewrite, map[string]*Targets) {
 	return h.rewrite, hostsToTargets
 }
 
+func BenchmarkNoMatch(b *testing.B) {
+	h := newSync()
+
+	url := "http://unknowndomainthatshouldnotmatch.com"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		h(toURL(url))
+	}
+}
+
 func toURL(urlStr string) *url.URL {
 	u, _ := url.Parse(urlStr)
 	return u
