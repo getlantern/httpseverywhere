@@ -88,13 +88,8 @@ func AddAllRules(dir string) ToHTTPS {
 	return &https{log: log, targets: targets}
 }
 
-// New creates a new ToHTTPS instance.
-func New() (HTTPS, error) {
-	return NewHTTPSFromGOB()
-}
-
-// NewHTTPSFromGOB creates a new ToHTTPS instance from embedded GOB data.
-func NewHTTPSFromGOB() (HTTPS, error) {
+// NewDefault creates a new ToHTTPS instance from an embedded set of rules.
+func NewDefault() (HTTPS, error) {
 	data, err := Asset("targets.gob")
 	if err != nil {
 		log.Errorf("Could not access targets? %v", err)
@@ -103,8 +98,8 @@ func NewHTTPSFromGOB() (HTTPS, error) {
 	return newHTTPSFromGOB(bytes.NewBuffer(data))
 }
 
-// NewHTTPSFromGOBFile creates a new ToHTTPS instance from a serialized Go GOB file.
-func NewHTTPSFromGOBFile(filename string) (HTTPS, error) {
+// NewFromGOBFile creates a new ToHTTPS instance from a serialized Go GOB file.
+func NewFromGOBFile(filename string) (HTTPS, error) {
 	f, err := ioutil.ReadFile(filename)
 	if err != nil {
 		log.Errorf("Could not read file at %v", filename)
@@ -138,8 +133,8 @@ func newHTTPSFromGOB(buf *bytes.Buffer) (HTTPS, error) {
 	return h.ToHTTPS, nil
 }
 
-// NewHTTPS creates a new ToHTTPS instance from a single rule set string.
-func NewHTTPS(rules string) ToHTTPS {
+// NewFromRule creates a new ToHTTPS instance from a single rule set string.
+func NewFromRule(rules string) ToHTTPS {
 	targets := make(map[string]*Rules)
 	AddRuleSet([]byte(rules), targets)
 	return &https{log: log, targets: targets}

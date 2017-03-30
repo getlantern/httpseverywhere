@@ -3,14 +3,12 @@ package httpseverywhere
 import (
 	"testing"
 
-	//"github.com/Sirupsen/logrus"
-
 	"github.com/getlantern/golog"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestNewFromGOB(t *testing.T) {
-	h, err := NewHTTPSFromGOB()
+	h, err := NewDefault()
 	assert.Nil(t, err)
 
 	base := "http://name.com"
@@ -27,7 +25,7 @@ func TestNewFromGOB(t *testing.T) {
 }
 
 func TestNewFromGOBFile(t *testing.T) {
-	h, err := NewHTTPSFromGOBFile("test/test-targets.gob")
+	h, err := NewFromGOBFile("test/test-targets.gob")
 	assert.Nil(t, err)
 
 	base := "http://name.com"
@@ -65,6 +63,19 @@ func BenchmarkAddAllRules(t *testing.B) {
 	AddAllRules("./testrules")
 }
 
+func BenchmarkNoMatch(b *testing.B) {
+	h, err := NewDefault()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	url := "http://unknowndomainthatshouldnotmatch.com"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		h(url)
+	}
+}
+
 /*
 func main() {
 	br := testing.Benchmark(BenchmarkAddAllRules)
@@ -83,7 +94,7 @@ func TestMixedContent(t *testing.T) {
                 to="https:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h := NewFromRule(testRule)
 	base := "http://rabbitmq.com"
 	r, mod := h.ToHTTPS(base)
 
@@ -105,7 +116,7 @@ func TestIgnoreHTTPRedirect(t *testing.T) {
 								to="http:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h := NewFromRule(testRule)
 	base := "https://stackoverflow.com/users/authenticate/"
 	r, mod := h.ToHTTPS(base)
 
@@ -124,7 +135,7 @@ func TestExclusions(t *testing.T) {
 								to="https:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h := NewFromRule(testRule)
 	base := "http://stackoverflow.com/users/authenticate/"
 	r, mod := h.ToHTTPS(base)
 
@@ -155,7 +166,7 @@ func TestDefaultOff(t *testing.T) {
                 to="https:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h := NewFromRule(testRule)
 	base := "http://rabbitmq.com"
 	r, mod := h.ToHTTPS(base)
 
@@ -177,7 +188,7 @@ func TestComplex(t *testing.T) {
   <rule from="^http://(\w{2})\.wikipedia\.org/wiki/"
           to="https://secure.wikimedia.org/wikipedia/$1/wiki/"/>
 </ruleset>`
-	h := NewHTTPS(testRule)
+	h := NewFromRule(testRule)
 	base := "http://fr.wikipedia.org/wiki/Chose"
 	r, mod := h.ToHTTPS(base)
 
@@ -194,7 +205,7 @@ func TestMultipleTargets(t *testing.T) {
                 to="https:" />
 </ruleset>`
 
-	h := NewHTTPS(testRule)
+	h := NewFromRule(testRule)
 	base := "http://rabbitmq.com"
 	r, mod := h.ToHTTPS(base)
 
@@ -215,7 +226,7 @@ func TestRedirect(t *testing.T) {
 		<target host="bundler.io"/>
 		<rule from="^http:" to="https:" />
 	</ruleset>`
-	h := NewHTTPS(testRule)
+	h := NewFromRule(testRule)
 	base := "http://bundler.io"
 	r, mod := h.ToHTTPS(base)
 
@@ -260,7 +271,7 @@ func TestWildcardPrefix(t *testing.T) {
 		<target host="*.bundler.io"/>
 		<rule from="^http:" to="https:" />
 	</ruleset>`
-	h := NewHTTPS(rule)
+	h := NewFromRule(rule)
 	base := "http://subdomain.bundler.io"
 	r, mod := h.ToHTTPS(base)
 
@@ -273,7 +284,7 @@ func TestWildcardSuffix(t *testing.T) {
 		<target host="bundler.*"/>
 		<rule from="^http:" to="https:" />
 	</ruleset>`
-	h := NewHTTPS(rule)
+	h := NewFromRule(rule)
 	base := "http://bundler.io"
 	r, mod := h.ToHTTPS(base)
 
