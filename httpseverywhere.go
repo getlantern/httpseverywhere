@@ -164,7 +164,7 @@ func (t *Targets) rewrite(originalURL *url.URL, host string) (string, bool) {
 	// We basically want to apply the associated set of rules if any of the
 	// targets match the url.
 	url := originalURL.String()
-	log.Debugf("Attempting to rewrite url %v", url)
+	log.Debugf("Attempting to rewrite url %v with %v", url, t.Rules)
 	for k := range t.Plain {
 		if host == k {
 			if r, done := t.Rules.rewrite(url); done {
@@ -198,7 +198,12 @@ func (r *Rules) rewrite(url string) (string, bool) {
 		}
 	}
 	for _, rule := range r.Rules {
+		log.Debugf("Rule %v", rule.From)
+	}
+	for _, rule := range r.Rules {
+		log.Debugf("Checking %v", rule.From)
 		if rule.from.MatchString(url) {
+			log.Debugf("Matched on %v", rule.From)
 			return rule.from.ReplaceAllString(url, rule.To), true
 		}
 	}

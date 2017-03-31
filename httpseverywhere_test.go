@@ -301,6 +301,39 @@ func TestWildcardSuffix(t *testing.T) {
 	assert.Equal(t, "https://bundler.io", r)
 }
 
+func TestCNNIsolated(t *testing.T) {
+	var rule = `<ruleset name="CNN.com (partial)">
+
+	<target host="*.cnn.com" />
+
+
+	<securecookie host="^(?:audience|markets\.money)\.cnn\.com$" name=".+" />
+
+
+	<rule from="^http://(audience|(?:markets|portfolio)\.money)\.cnn\.com/"
+		to="https://$1.cnn.com/" />
+
+	<rule from="^http://jobsearch\.money\.cnn\.com/(c/|favicon\.ico)"
+		to="https://cnnmoney.jobamatic.com/$1" />
+
+</ruleset>
+`
+
+	h, _ := newHTTPS(rule)
+	base := "http://cnn.com/"
+	_, mod := h(toURL(base))
+
+	assert.False(t, mod)
+}
+
+func TestCNNFull(t *testing.T) {
+	h := newSync()
+	base := "http://cnn.com/"
+	_, mod := h(toURL(base))
+
+	assert.False(t, mod)
+}
+
 // newHTTPS creates a new rewrite instance from a single rule set string.
 func newHTTPS(rules string) (rewrite, map[string]*Targets) {
 	hostsToTargets := make(map[string]*Targets)
