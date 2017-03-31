@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/getlantern/golog"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -326,6 +327,74 @@ func TestCNNIsolated(t *testing.T) {
 	assert.False(t, mod)
 }
 
+func TestCNNAllRules(t *testing.T) {
+	var rule = `<ruleset name="CNN.com (partial)">
+
+	<target host="*.cnn.com" />
+
+
+	<securecookie host="^(?:audience|markets\.money)\.cnn\.com$" name=".+" />
+
+
+	<rule from="^http://(audience|(?:markets|portfolio)\.money)\.cnn\.com/"
+		to="https://$1.cnn.com/" />
+
+	<rule from="^http://jobsearch\.money\.cnn\.com/(c/|favicon\.ico)"
+		to="https://cnnmoney.jobamatic.com/$1" />
+
+</ruleset>
+`
+
+	h, _ := newHTTPS(rule)
+	base := "http://cnn.com/"
+	_, mod := h(toURL(base))
+
+	assert.False(t, mod)
+
+	u := toURL("http://jobsearch.money.cnn.com/favicon.ico")
+
+	r, modified := h(u)
+
+	assert.True(t, modified, "Should have modified URL")
+	assert.Equal(t, "https://cnnmoney.jobamatic.com/favicon.ico", r)
+}
+
+func TestCNNConflictingRules(t *testing.T) {
+	var rule = `<ruleset name="CNN.com (partial)">
+
+	<target host="*.cnn.com" />
+
+
+	<securecookie host="^(?:audience|markets\.money)\.cnn\.com$" name=".+" />
+
+
+	<rule from="^http://(audience|(?:markets|portfolio)\.money)\.cnn\.com/"
+		to="https://$1.cnn.com/" />
+
+	<rule from="^http://jobsearch\.money\.cnn\.com/(c/|favicon\.ico)"
+		to="https://cnnmoney.jobamatic.com/$1" />
+
+</ruleset>
+`
+	var conflicting = `
+<ruleset name="Bitly vanity domains">
+	<rule from="^http:" to="https:" />
+
+	<target host="cnn.it" />
+	<target host="cnn.ph" />
+	<target host="cnn.st" />
+</ruleset>
+`
+
+	h, hostsToTargets := newHTTPS(conflicting)
+	Preprocessor.AddRuleSet([]byte(rule), hostsToTargets)
+
+	base := "http://cnn.com/"
+	_, mod := h(toURL(base))
+
+	assert.False(t, mod)
+}
+
 func TestCNNFull(t *testing.T) {
 	h := newSync()
 	base := "http://cnn.com/"
@@ -355,6 +424,10 @@ func BenchmarkNoMatch(b *testing.B) {
 }
 
 func toURL(urlStr string) *url.URL {
-	u, _ := url.Parse(urlStr)
+	log := golog.LoggerFor("httpseverywhere-test")
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		log.Errorf("Error parsing URL? %v", err)
+	}
 	return u
 }
