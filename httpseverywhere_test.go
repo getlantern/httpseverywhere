@@ -302,7 +302,7 @@ func TestWildcardSuffix(t *testing.T) {
 }
 
 // newHTTPS creates a new rewrite instance from a single rule set string.
-func newHTTPS(rules string) (rewrite, map[string]*Targets) {
+func newHTTPS(rules string) (Rewrite, map[string]*Targets) {
 	hostsToTargets := make(map[string]*Targets)
 	Preprocessor.AddRuleSet([]byte(rules), hostsToTargets)
 

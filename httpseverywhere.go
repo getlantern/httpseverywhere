@@ -16,13 +16,18 @@ import (
 
 var (
 	log = golog.LoggerFor("httpseverywhere")
+
+	defaultHTTPS = newEmpty()
 )
 
-// Rewrite exports the rewrite method for users of this library.
-var Rewrite = newAsync()
+// Rewrite changes an HTTP URL to rewrite.
+type Rewrite func(url *url.URL) (string, bool)
 
-// rewrite changes an HTTP URL to rewrite.
-type rewrite func(url *url.URL) (string, bool)
+// Default returns a lazily-initialized Rewrite using the default rules
+func Default() Rewrite {
+	defaultHTTPS.initAsync()
+	return defaultHTTPS.rewrite
+}
 
 type https struct {
 	// This is a map of root host names to Targets -- map[string]*Targets
@@ -32,6 +37,7 @@ type https struct {
 	max            int64
 	maxHost        string
 	statM          sync.RWMutex
+	initOnce       sync.Once
 }
 
 // A rule maps the regular expression to match and the string to change it to.
@@ -70,28 +76,38 @@ type Targets struct {
 	Rules *Rules
 }
 
-// new creates a new rewrite instance from embedded GOB data with asynchronous
+func newEmpty() *https {
+	h := &https{}
+	h.hostsToTargets.Store(make(map[string]*Targets))
+	return h
+}
+
+// new creates a new Rewrite instance from embedded GOB data with asynchronous
 // loading of the rule sets to allow the caller to about around a 2 second
 // delay.
-func newAsync() rewrite {
-	h := &https{}
-
-	h.hostsToTargets.Store(make(map[string]*Targets))
-	go func() {
-		d := newDeserializer()
-		temp := d.newHostsToTargets()
-		h.hostsToTargets.Store(temp)
-	}()
-
+func newAsync() Rewrite {
+	h := newEmpty()
+	h.initAsync()
 	return h.rewrite
 }
 
-// newSync creates a new rewrite instance from embedded GOB data.
-func newSync() rewrite {
+// newSync creates a new Rewrite instance from embedded GOB data.
+func newSync() Rewrite {
 	h := &https{}
-	d := newDeserializer()
-	h.hostsToTargets.Store(d.newHostsToTargets())
+	h.init()
 	return h.rewrite
+}
+
+func (h *https) init() {
+	d := newDeserializer()
+	temp := d.newHostsToTargets()
+	h.hostsToTargets.Store(temp)
+}
+
+func (h *https) initAsync() {
+	h.initOnce.Do(func() {
+		go h.init()
+	})
 }
 
 func (h *https) rewrite(url *url.URL) (string, bool) {
