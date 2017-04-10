@@ -25,7 +25,8 @@ type preprocessor struct {
 
 // Preprocess adds all of the rules in the specified directory.
 func (p *preprocessor) Preprocess(dir string) {
-	targets := make(map[string]*Targets)
+	//targets := make(map[string]*Targets)
+	domainsToRulesets := make(map[string][]*Rules)
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		p.log.Fatal(err)
@@ -33,39 +34,38 @@ func (p *preprocessor) Preprocess(dir string) {
 
 	var errors int
 	for _, file := range files {
-		/*
-			if !strings.HasPrefix(file.Name(), "Name.com") {
-				continue
-			}
-		*/
 		b, errr := ioutil.ReadFile(filepath.Join(dir, file.Name()))
 		if errr != nil {
-			//log.Errorf("Error reading file: %v", err)
+			p.log.Errorf("Error reading file: %v", err)
 		} else {
-			processed := p.AddRuleSet(b, targets)
+			p.log.Debugf("Adding rule for file: %v", file.Name())
+			processed := p.AddRuleSet(b, domainsToRulesets)
 			if !processed {
 				errors++
 			}
 		}
 	}
 
-	p.log.Debugf("Loaded rules with %v targets and %v errors", len(targets), errors)
+	p.log.Debugf("Loaded rules with %v targets and %v errors", len(domainsToRulesets), errors)
 
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
-	// Encode (send) the value.
-	err = enc.Encode(targets)
+
+	p.log.Debugf("Encoding...")
+	err = enc.Encode(domainsToRulesets)
+	p.log.Debug("Finished decoding...")
 	if err != nil {
 		p.log.Fatalf("encode error: %v", err)
 	}
-	ioutil.WriteFile("targets.gob", buf.Bytes(), 0644)
+	p.log.Debugf("Writing gob file")
+	ioutil.WriteFile("rulesets.gob", buf.Bytes(), 0644)
 }
 
 // AddRuleSet adds the specified rule set to the map of targets. Returns
 // whether or not the rule processed correctly and whether or not the
 // target was a duplicate. Duplicates are ignored but are considered to have
 // processed correctly.
-func (p *preprocessor) AddRuleSet(rules []byte, rootsToTargets map[string]*Targets) bool {
+func (p *preprocessor) AddRuleSet(rules []byte, domainsToRulesets map[string][]*Rules) bool {
 	var ruleset Ruleset
 	xml.Unmarshal(rules, &ruleset)
 
@@ -80,58 +80,9 @@ func (p *preprocessor) AddRuleSet(rules []byte, rootsToTargets map[string]*Targe
 		return false
 	}
 
-	rs, err := p.ruleSetToRules(ruleset)
+	err := p.ruleSetToRules(&ruleset, domainsToRulesets)
 	if err != nil {
 		return false
-	}
-
-	// Now add the rules to all targets for the rule set.
-	for _, target := range ruleset.Target {
-		// The host roots key the targets map so we can quickly determine if
-		// there are any rules at all for a given root in O(1) time.
-		if strings.HasPrefix(target.Host, "*") {
-
-			root, err := p.extractRoot(strings.Replace(target.Host, "*", "pre", 1))
-			if err != nil {
-				return false
-			}
-
-			// We need to make it into a valid regexp.
-			re := "." + target.Host
-			if existing, ok := rootsToTargets[root]; ok {
-				p.addWildcardPrefix(existing, re)
-			} else {
-				p.log.Debugf("Adding wildcard prefix for %v", target.Host)
-				targs := p.newTargets(rs)
-				rootsToTargets[root] = targs
-				p.addWildcardPrefix(targs, re)
-			}
-		} else if strings.HasSuffix(target.Host, "*") {
-			root := p.rootForWildcardSuffix(target.Host)
-			p.log.Debugf("Extracting wildcard suffix for host %v", target.Host)
-			if existing, ok := rootsToTargets[root]; ok {
-				p.log.Debugf("Adding to existing wildcard suffix targets for %v", root)
-				p.addWildcardSuffix(existing, target.Host)
-			} else {
-				targs := p.newTargets(rs)
-				rootsToTargets[root] = targs
-				p.addWildcardSuffix(targs, target.Host)
-				p.log.Debugf("Adding new wildcard suffix targets for %v", root)
-			}
-		} else {
-			root, err := p.extractRoot(target.Host)
-			if err != nil {
-				return false
-			}
-			if len(root) == 0 {
-				p.log.Debugf("Found empty string for: %v", target.Host)
-			}
-			if existing, ok := rootsToTargets[root]; ok {
-				existing.Plain[target.Host] = true
-			} else {
-				p.addPlain(rootsToTargets, root, target.Host, p.newTargets(rs))
-			}
-		}
 	}
 	return true
 }
@@ -168,49 +119,7 @@ func (p *preprocessor) rootForWildcardSuffix(host string) string {
 	return root
 }
 
-func (p *preprocessor) addPlain(rootsToTargets map[string]*Targets,
-	rootDomain, fullDomain string, targets *Targets) {
-	if t, ok := rootsToTargets[rootDomain]; ok {
-		t.Plain[fullDomain] = true
-		return
-	}
-	targets.Plain[fullDomain] = true
-	rootsToTargets[rootDomain] = targets
-}
-
-func (p *preprocessor) addWildcardPrefix(targets *Targets, host string) {
-	re, err := regexp.Compile(host)
-	if err != nil {
-		p.log.Errorf("Could not compile regex for target host %v: %v", host, err)
-		return
-	}
-	if _, ok := targets.WildcardPrefix[host]; ok {
-		p.log.Debugf("Ignoring duplicate prefix for %v", host)
-		return
-	}
-	targets.WildcardPrefix[host] = true
-	targets.wildcardPrefix = append(targets.wildcardPrefix, re)
-
-}
-
-func (p *preprocessor) addWildcardSuffix(targets *Targets, host string) {
-	p.log.Debugf("Compiling wildcard suffix: %v", host)
-	re, err := regexp.Compile(host)
-	if err != nil {
-		p.log.Errorf("Could not compile regex for target host %v: %v", host, err)
-		return
-	}
-	if _, ok := targets.WildcardSuffix[host]; ok {
-		p.log.Debugf("Ignoring duplicate suffix for %v", host)
-		return
-	}
-
-	p.log.Debugf("Adding wildcard suffix for %v", host)
-	targets.WildcardSuffix[host] = true
-	targets.wildcardSuffix = append(targets.wildcardSuffix, re)
-}
-
-func (p *preprocessor) ruleSetToRules(set Ruleset) (*Rules, error) {
+func (p *preprocessor) ruleSetToRules(set *Ruleset, domainsToRulesets map[string][]*Rules) error {
 	mod := make([]*rule, 0)
 	for _, r := range set.Rule {
 		// We ignore any rules that attempt to redirect to HTTP, as they would
@@ -223,7 +132,7 @@ func (p *preprocessor) ruleSetToRules(set Ruleset) (*Rules, error) {
 		f, err := regexp.Compile(r.From)
 		if err != nil {
 			p.log.Debugf("Could not compile regex: %v", err)
-			return nil, err
+			return err
 		}
 
 		// Go handles references to matching groups in the replacement text
@@ -245,20 +154,89 @@ func (p *preprocessor) ruleSetToRules(set Ruleset) (*Rules, error) {
 		pattern, err := regexp.Compile(e.Pattern)
 		if err != nil {
 			p.log.Debugf("Could not compile regex for exclusion: %v", err)
-			return nil, err
+			return err
 		}
 		exclude = append(exclude, &exclusion{Pattern: e.Pattern, pattern: pattern})
 	}
-	return &Rules{Rules: mod, Exclusions: exclude}, nil
+
+	rules := &Rules{
+		Rules:      mod,
+		Exclusions: exclude,
+	}
+	p.makeTargets(set, domainsToRulesets, rules)
+	return nil
 }
 
-func (p *preprocessor) newTargets(rules *Rules) *Targets {
-	return &Targets{
-		Rules:          rules,
-		Plain:          make(map[string]bool),
-		WildcardPrefix: make(map[string]bool),
-		WildcardSuffix: make(map[string]bool),
-		wildcardPrefix: make([]*regexp.Regexp, 0),
-		wildcardSuffix: make([]*regexp.Regexp, 0),
+func (p *preprocessor) makeTargets(set *Ruleset, domainsToRulesets map[string][]*Rules, rules *Rules) error {
+
+	regexTargets := make([]*RegexTarget, 0)
+	plainTargets := make(map[string]bool)
+	rules.RegexTargets = regexTargets
+	rules.PlainTargets = plainTargets
+	for _, target := range set.Target {
+		if strings.HasPrefix(target.Host, "*") {
+			root, err := p.extractRoot(strings.Replace(target.Host, "*", "pre", 1))
+			if err != nil {
+				p.log.Errorf("Could not extract root? %v", err)
+				return err
+			}
+
+			// We need to make it into a valid regexp.
+			re := "." + target.Host
+
+			t, err := p.newRegexTarget(re)
+			if err != nil {
+				return err
+			}
+			regexTargets = append(regexTargets, t)
+			if existing, ok := domainsToRulesets[root]; ok {
+				domainsToRulesets[root] = append(existing, rules)
+			} else {
+				r := make([]*Rules, 0)
+				r = append(r, rules)
+				domainsToRulesets[root] = r
+			}
+		} else if strings.HasSuffix(target.Host, "*") {
+			root := p.rootForWildcardSuffix(target.Host)
+			p.log.Debugf("Extracting wildcard suffix for host %v", target.Host)
+			t, err := p.newRegexTarget(target.Host)
+			if err != nil {
+				return err
+			}
+			regexTargets = append(regexTargets, t)
+			if existing, ok := domainsToRulesets[root]; ok {
+				domainsToRulesets[root] = append(existing, rules)
+			} else {
+				r := make([]*Rules, 0)
+				r = append(r, rules)
+				domainsToRulesets[root] = r
+			}
+		} else {
+			root, err := p.extractRoot(target.Host)
+			if err != nil {
+				return err
+			}
+			if len(root) == 0 {
+				p.log.Debugf("Found empty string for: %v", target.Host)
+			}
+			rules.PlainTargets[target.Host] = true
+			if existing, ok := domainsToRulesets[root]; ok {
+				domainsToRulesets[root] = append(existing, rules)
+			} else {
+				r := make([]*Rules, 0)
+				r = append(r, rules)
+				domainsToRulesets[root] = r
+			}
+		}
 	}
+	return nil
+}
+
+func (p *preprocessor) newRegexTarget(host string) (*RegexTarget, error) {
+	re, err := regexp.Compile(host)
+	if err != nil {
+		p.log.Errorf("Could not compile %v, got %v", host, err)
+		return nil, err
+	}
+	return &RegexTarget{Regex: host, regex: re}, nil
 }

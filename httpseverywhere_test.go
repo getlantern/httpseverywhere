@@ -404,13 +404,13 @@ func TestCNNFull(t *testing.T) {
 }
 
 // newHTTPS creates a new rewrite instance from a single rule set string.
-func newHTTPS(rules string) (rewrite, map[string]*Targets) {
-	hostsToTargets := make(map[string]*Targets)
-	Preprocessor.AddRuleSet([]byte(rules), hostsToTargets)
+func newHTTPS(rules string) (rewrite, map[string][]*Rules) {
+	domainsToRulesets := make(map[string][]*Rules)
+	Preprocessor.AddRuleSet([]byte(rules), domainsToRulesets)
 
 	h := &https{}
-	h.hostsToTargets.Store(hostsToTargets)
-	return h.rewrite, hostsToTargets
+	h.domainsToRulesets.Store(domainsToRulesets)
+	return h.rewrite, domainsToRulesets
 }
 
 func BenchmarkNoMatch(b *testing.B) {

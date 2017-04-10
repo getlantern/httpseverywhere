@@ -19,14 +19,14 @@ func newDeserializer() *deserializer {
 	}
 }
 
-func (d *deserializer) newHostsToTargets() map[string]*Targets {
+func (d *deserializer) newDomainsToRulesets() map[string]*Rules {
 	start := time.Now()
-	data := MustAsset("targets.gob")
+	data := MustAsset("rulesets.gob")
 	buf := bytes.NewBuffer(data)
 
 	dec := gob.NewDecoder(buf)
-	hostsToTargets := make(map[string]*Targets)
-	err := dec.Decode(&hostsToTargets)
+	domainsToRulesets := make(map[string]*Rules)
+	err := dec.Decode(&domainsToRulesets)
 	if err != nil {
 		d.log.Errorf("Could not decode: %v", err)
 		return nil
@@ -35,34 +35,49 @@ func (d *deserializer) newHostsToTargets() map[string]*Targets {
 
 	// The compiled regular expressions aren't serialized, so we have to manually
 	// compile them.
-	for _, v := range hostsToTargets {
-		for _, r := range v.Rules.Rules {
-			r.from, _ = regexp.Compile(r.From)
-		}
-
-		for _, e := range v.Rules.Exclusions {
-			e.pattern, _ = regexp.Compile(e.Pattern)
-		}
-
-		v.wildcardPrefix = make([]*regexp.Regexp, 0)
-		for pre := range v.WildcardPrefix {
-			comp, err := regexp.Compile(pre)
+	for _, set := range domainsToRulesets {
+		for _, target := range set.RegexTargets {
+			target.regex, err = regexp.Compile(target.Regex)
 			if err != nil {
-				d.log.Debugf("Error compiling? %v", err)
-			} else {
-				v.wildcardPrefix = append(v.wildcardPrefix, comp)
+				d.log.Debugf("Error compiling target %v? %v", target.Regex, err)
 			}
 		}
 
-		v.wildcardSuffix = make([]*regexp.Regexp, 0)
-		for suff := range v.WildcardSuffix {
-			comp, err := regexp.Compile(suff)
+		for _, rule := range set.Rules {
+			rule.from, err = regexp.Compile(rule.From)
 			if err != nil {
-				d.log.Debugf("Error compiling suffix, %v", err)
-			} else {
-				v.wildcardSuffix = append(v.wildcardSuffix, comp)
+				d.log.Debugf("Error compiling rule %v? %v", rule.From, err)
 			}
 		}
+
+		for _, e := range set.Exclusions {
+			e.pattern, err = regexp.Compile(e.Pattern)
+			if err != nil {
+				d.log.Debugf("Error compiling exclusion %v? %v", e.Pattern, err)
+			}
+		}
+
+		/*
+			v.wildcardPrefix = make([]*regexp.Regexp, 0)
+			for pre := range v.WildcardPrefix {
+				comp, err := regexp.Compile(pre)
+				if err != nil {
+					d.log.Debugf("Error compiling? %v", err)
+				} else {
+					v.wildcardPrefix = append(v.wildcardPrefix, comp)
+				}
+			}
+
+			v.wildcardSuffix = make([]*regexp.Regexp, 0)
+			for suff := range v.WildcardSuffix {
+				comp, err := regexp.Compile(suff)
+				if err != nil {
+					d.log.Debugf("Error compiling suffix, %v", err)
+				} else {
+					v.wildcardSuffix = append(v.wildcardSuffix, comp)
+				}
+			}
+		*/
 	}
-	return hostsToTargets
+	return domainsToRulesets
 }
