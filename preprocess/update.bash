@@ -14,4 +14,4 @@ go build || die "Could not build"
 ./preprocess || die "Error preprocessing?"
 
 go get -u github.com/jteeuwen/go-bindata/...
-go-bindata -pkg httpseverywhere -o ../gobtargets.go ./targets.gob
+go-bindata -pkg httpseverywhere -o ../gobrulesets.go ./rulesets.gob
