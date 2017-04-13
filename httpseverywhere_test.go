@@ -443,3 +443,10 @@ func toURL(urlStr string) *url.URL {
 	u, _ := url.Parse(urlStr)
 	return u
 }
+
+// newSync creates a new Rewrite instance from embedded GOB data.
+func newSync() Rewrite {
+	h := newEmpty()
+	h.init()
+	return h.rewrite
+}

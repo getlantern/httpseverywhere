@@ -26,6 +26,13 @@ type httpse struct {
 	plainTargets    atomic.Value // map[string]*ruleset
 }
 
+// Default returns a lazily-initialized Rewrite using the default rules
+func Default() Rewrite {
+	h := newEmpty()
+	h.initAsync()
+	return h.rewrite
+}
+
 func newEmpty() *httpse {
 	h := &httpse{
 		log: golog.LoggerFor("httpse"),
@@ -33,22 +40,6 @@ func newEmpty() *httpse {
 	h.wildcardTargets.Store(iradix.New())
 	h.plainTargets.Store(make(map[string]*ruleset))
 	return h
-}
-
-// newAsync creates a new Rewrite instance from embedded GOB data with asynchronous
-// loading of the rule sets to allow the caller to about around a 2 second
-// delay.
-func newAsync() Rewrite {
-	h := newEmpty()
-	h.initAsync()
-	return h.rewrite
-}
-
-// newSync creates a new Rewrite instance from embedded GOB data.
-func newSync() Rewrite {
-	h := newEmpty()
-	h.init()
-	return h.rewrite
 }
 
 func (h *httpse) init() {
