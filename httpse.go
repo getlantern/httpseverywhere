@@ -8,6 +8,7 @@ import (
 
 	"github.com/Yawning/obfs4/common/log"
 	"github.com/getlantern/golog"
+	"github.com/getlantern/mtime"
 	iradix "github.com/hashicorp/go-immutable-radix"
 )
 
@@ -16,14 +17,23 @@ type Rewrite func(url *url.URL) (string, bool)
 
 type httpse struct {
 	log             golog.Logger
-	runs            int64
-	totalTime       int64
-	max             int64
-	maxHost         string
-	statM           sync.RWMutex
 	initOnce        sync.Once
 	wildcardTargets atomic.Value // *iradix.Tree
 	plainTargets    atomic.Value // map[string]*ruleset
+	stats           *httpseStats
+	statsCh         chan *timing
+}
+
+type httpseStats struct {
+	runs      int64
+	totalTime int64
+	max       int64
+	maxHost   string
+}
+
+type timing struct {
+	host string
+	dur  time.Duration
 }
 
 // Default returns a lazily-initialized Rewrite using the default rules
@@ -35,8 +45,11 @@ func Default() Rewrite {
 
 func newEmpty() *httpse {
 	h := &httpse{
-		log: golog.LoggerFor("httpse"),
+		log:     golog.LoggerFor("httpse"),
+		stats:   &httpseStats{},
+		statsCh: make(chan *timing),
 	}
+	go h.readTimings()
 	h.wildcardTargets.Store(iradix.New())
 	h.plainTargets.Store(make(map[string]*ruleset))
 	return h
@@ -63,30 +76,31 @@ func (h *httpse) rewrite(url *url.URL) (string, bool) {
 		return "", false
 	}
 
-	start := time.Now()
+	start := mtime.Now()
+	defer func() {
+		h.statsCh <- &timing{
+			dur:  mtime.Now().Sub(start),
+			host: url.String(),
+		}
+	}()
 	if val, ok := h.plainTargets.Load().(map[string]*ruleset)[url.Host]; ok {
-		r, hit := h.rewriteWithRuleset(url, val)
-		h.addTiming(time.Now().Sub(start), url.String())
-		return r, hit
+		if r, hit := h.rewriteWithRuleset(url, val); hit {
+			return r, hit
+		}
 	}
-	_, val, match := h.wildcardTargets.Load().(*iradix.Tree).Root().LongestPrefix([]byte(url.Host))
-	if !match {
-		h.log.Debugf("No suffix match for %v", url.Host)
-
-		// Now check prefixes (with reversing the URL host)
-		_, val, match = h.wildcardTargets.Load().(*iradix.Tree).Root().LongestPrefix([]byte(reverse(url.Host)))
-	}
-
-	if !match {
-		h.log.Debugf("No match for %v", url.Host)
-		return "", false
+	// Check prefixes (with reversing the URL host)
+	if _, val, match := h.wildcardTargets.Load().(*iradix.Tree).Root().LongestPrefix([]byte(reverse(url.Host))); match {
+		if r, hit := h.rewriteWithRuleset(url, val.(*ruleset)); hit {
+			return r, hit
+		}
 	}
 
-	rs := val.(*ruleset)
+	// Check suffixes last because there are far fewer suffix rules.
+	if _, val, match := h.wildcardTargets.Load().(*iradix.Tree).Root().LongestPrefix([]byte(url.Host)); match {
+		return h.rewriteWithRuleset(url, val.(*ruleset))
+	}
 
-	r, hit := h.rewriteWithRuleset(url, rs)
-	h.addTiming(time.Now().Sub(start), url.String())
-	return r, hit
+	return "", false
 }
 
 // rewriteWithRuleset converts the given URL to HTTPS if there is an associated
@@ -125,19 +139,20 @@ func reverse(input string) string {
 	return string(runes)
 }
 
-func (h *httpse) addTiming(dur time.Duration, host string) {
-	ms := dur.Nanoseconds() / int64(time.Millisecond)
-	h.statM.Lock()
-	h.runs++
-	h.totalTime += ms
-	if ms > h.max {
-		h.max = ms
-		h.maxHost = host
+func (h *httpse) readTimings() {
+	for t := range h.statsCh {
+		h.stats.addTiming(t)
 	}
-	h.statM.Unlock()
+}
 
-	h.statM.RLock()
-	log.Debugf("Average running time: %vms", float64(h.totalTime/h.runs))
-	log.Debugf("Max running time: %vms for host: %v", h.max, h.maxHost)
-	h.statM.RUnlock()
+func (s *httpseStats) addTiming(t *timing) {
+	ms := t.dur.Nanoseconds() / int64(time.Millisecond)
+	s.runs++
+	s.totalTime += ms
+	if ms > s.max {
+		s.max = ms
+		s.maxHost = t.host
+	}
+	log.Debugf("Average running time: %vms", float64(s.totalTime/s.runs))
+	log.Debugf("Max running time: %vms for host: %v", s.max, s.maxHost)
 }

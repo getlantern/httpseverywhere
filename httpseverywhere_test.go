@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/getlantern/golog"
 	iradix "github.com/hashicorp/go-immutable-radix"
 	"github.com/stretchr/testify/assert"
 )
@@ -400,9 +399,7 @@ func newHTTPS(rules string) Rewrite {
 // newRawHTTPS creates a new rewrite instance from a single rule set string.
 func newRawHTTPS(rules string) *httpse {
 	//log := golog.LoggerFor("httpseverywhere-test")
-	h := &httpse{
-		log: golog.LoggerFor("httpse"),
-	}
+	h := newEmpty()
 
 	addRuleset(rules, h)
 
