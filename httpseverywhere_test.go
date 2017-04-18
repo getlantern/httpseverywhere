@@ -410,7 +410,7 @@ func addRuleset(rules string, h *httpse) {
 	wildcards := radix.New()
 
 	d := newDeserializer()
-	wildcards = d.addRuleset(rs, plains, wildcards)
+	d.addRuleset(rs, plains, wildcards)
 
 	h.plainTargets.Store(plains)
 	h.wildcardTargets.Store(wildcards)

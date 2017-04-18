@@ -40,22 +40,22 @@ func (d *deserializer) newRulesets() (map[string]*ruleset, *radix.Tree, error) {
 	plains := make(map[string]*ruleset)
 	wildcards := radix.New()
 	for _, rs := range rulesets {
-		wildcards = d.addRuleset(rs, plains, wildcards)
+		d.addRuleset(rs, plains, wildcards)
 	}
 
 	d.log.Debugf("Loaded HTTPS Everywhere in %v", time.Now().Sub(start).String())
 	return plains, wildcards, nil
 }
 
-func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildcards *radix.Tree) *radix.Tree {
+func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildcards *radix.Tree) {
 	// If the rule is turned off, ignore it. This should be handled in
 	// preprocessing, but better to be sure.
 	if len(rs.Off) > 0 {
-		return wildcards
+		return
 	}
 	// ignore any rule that is mixedcontent-only.
 	if rs.Platform == "mixedcontent" {
-		return wildcards
+		return
 	}
 
 	// Make a simpler in memory version.
@@ -67,7 +67,7 @@ func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildc
 		pat, err := regexp.Compile(e.Pattern)
 		if err != nil {
 			d.log.Debugf("Compile failed?? %v", err)
-			return wildcards
+			return
 		}
 		rsCopy.exclusion = append(rsCopy.exclusion, exclusion{
 			pattern: pat,
@@ -78,7 +78,7 @@ func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildc
 		from, err := regexp.Compile(r.From)
 		if err != nil {
 			d.log.Debugf("Compile failed?? %v", err)
-			return wildcards
+			return
 		}
 		rsCopy.rule = append(rsCopy.rule, rule{
 			from: from,
@@ -98,7 +98,6 @@ func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildc
 			plains[target.Host] = rsCopy
 		}
 	}
-	return wildcards
 }
 
 func isPrefixTarget(target *Target) bool {
