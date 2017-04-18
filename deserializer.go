@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/armon/go-radix"
 	"github.com/getlantern/golog"
-	iradix "github.com/hashicorp/go-immutable-radix"
 )
 
 type deserializer struct {
@@ -22,7 +22,7 @@ func newDeserializer() *deserializer {
 	}
 }
 
-func (d *deserializer) newRulesets() (map[string]*ruleset, *iradix.Tree, error) {
+func (d *deserializer) newRulesets() (map[string]*ruleset, *radix.Tree, error) {
 	start := time.Now()
 	data := MustAsset("rulesets.gob")
 	buf := bytes.NewBuffer(data)
@@ -38,7 +38,7 @@ func (d *deserializer) newRulesets() (map[string]*ruleset, *iradix.Tree, error) 
 	// The compiled regular expressions aren't serialized, so we have to manually
 	// compile them.
 	plains := make(map[string]*ruleset)
-	wildcards := iradix.New()
+	wildcards := radix.New()
 	for _, rs := range rulesets {
 		wildcards = d.addRuleset(rs, plains, wildcards)
 	}
@@ -47,7 +47,7 @@ func (d *deserializer) newRulesets() (map[string]*ruleset, *iradix.Tree, error) 
 	return plains, wildcards, nil
 }
 
-func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildcards *iradix.Tree) *iradix.Tree {
+func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildcards *radix.Tree) *radix.Tree {
 	// If the rule is turned off, ignore it. This should be handled in
 	// preprocessing, but better to be sure.
 	if len(rs.Off) > 0 {
@@ -90,10 +90,10 @@ func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildc
 		//h.log.Debugf("Adding target host %v", target.Host)
 		if isSuffixTarget(&target) {
 			//h.log.Debug("Adding suffix target")
-			wildcards, _, _ = wildcards.Insert([]byte(strings.TrimSuffix(target.Host, "*")), rsCopy)
+			wildcards.Insert(strings.TrimSuffix(target.Host, "*"), rsCopy)
 		} else if isPrefixTarget(&target) {
 			input := reverse(strings.TrimPrefix(target.Host, "*"))
-			wildcards, _, _ = wildcards.Insert([]byte(input), rsCopy)
+			wildcards.Insert(input, rsCopy)
 		} else {
 			plains[target.Host] = rsCopy
 		}

@@ -6,10 +6,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Yawning/obfs4/common/log"
+	"github.com/armon/go-radix"
 	"github.com/getlantern/golog"
 	"github.com/getlantern/mtime"
-	iradix "github.com/hashicorp/go-immutable-radix"
 )
 
 // Rewrite changes an HTTP URL to rewrite.
@@ -18,7 +17,7 @@ type Rewrite func(url *url.URL) (string, bool)
 type httpse struct {
 	log             golog.Logger
 	initOnce        sync.Once
-	wildcardTargets atomic.Value // *iradix.Tree
+	wildcardTargets atomic.Value // *radix.Tree
 	plainTargets    atomic.Value // map[string]*ruleset
 	stats           *httpseStats
 	statsCh         chan *timing
@@ -50,7 +49,7 @@ func newEmpty() *httpse {
 		statsCh: make(chan *timing),
 	}
 	go h.readTimings()
-	h.wildcardTargets.Store(iradix.New())
+	h.wildcardTargets.Store(radix.New())
 	h.plainTargets.Store(make(map[string]*ruleset))
 	return h
 }
@@ -89,14 +88,14 @@ func (h *httpse) rewrite(url *url.URL) (string, bool) {
 		}
 	}
 	// Check prefixes (with reversing the URL host)
-	if _, val, match := h.wildcardTargets.Load().(*iradix.Tree).Root().LongestPrefix([]byte(reverse(url.Host))); match {
+	if _, val, match := h.wildcardTargets.Load().(*radix.Tree).LongestPrefix(reverse(url.Host)); match {
 		if r, hit := h.rewriteWithRuleset(url, val.(*ruleset)); hit {
 			return r, hit
 		}
 	}
 
 	// Check suffixes last because there are far fewer suffix rules.
-	if _, val, match := h.wildcardTargets.Load().(*iradix.Tree).Root().LongestPrefix([]byte(url.Host)); match {
+	if _, val, match := h.wildcardTargets.Load().(*radix.Tree).LongestPrefix(url.Host); match {
 		return h.rewriteWithRuleset(url, val.(*ruleset))
 	}
 
@@ -141,18 +140,18 @@ func reverse(input string) string {
 
 func (h *httpse) readTimings() {
 	for t := range h.statsCh {
-		h.stats.addTiming(t)
+		h.addTiming(t)
 	}
 }
 
-func (s *httpseStats) addTiming(t *timing) {
+func (h *httpse) addTiming(t *timing) {
 	ms := t.dur.Nanoseconds() / int64(time.Millisecond)
-	s.runs++
-	s.totalTime += ms
-	if ms > s.max {
-		s.max = ms
-		s.maxHost = t.host
+	h.stats.runs++
+	h.stats.totalTime += ms
+	if ms > h.stats.max {
+		h.stats.max = ms
+		h.stats.maxHost = t.host
 	}
-	log.Debugf("Average running time: %vms", float64(s.totalTime/s.runs))
-	log.Debugf("Max running time: %vms for host: %v", s.max, s.maxHost)
+	h.log.Debugf("Average running time: %vms", float64(h.stats.totalTime/h.stats.runs))
+	h.log.Debugf("Max running time: %vms for host: %v", h.stats.max, h.stats.maxHost)
 }

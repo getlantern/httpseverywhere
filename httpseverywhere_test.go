@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"testing"
 
-	iradix "github.com/hashicorp/go-immutable-radix"
+	"github.com/armon/go-radix"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -97,8 +97,6 @@ func TestMixedContent(t *testing.T) {
         <rule from="^http:"
                 to="https:" />
 </ruleset>`
-
-	//he := new()
 
 	h := newHTTPS(testRule)
 	base := "http://rabbitmq.com"
@@ -409,7 +407,7 @@ func newRawHTTPS(rules string) *httpse {
 func addRuleset(rules string, h *httpse) {
 	rs := unmarshallRuleset(rules)
 	plains := make(map[string]*ruleset)
-	wildcards := iradix.New()
+	wildcards := radix.New()
 
 	d := newDeserializer()
 	wildcards = d.addRuleset(rs, plains, wildcards)
@@ -424,7 +422,6 @@ func unmarshallRuleset(rules string) *Ruleset {
 	return &ruleset
 }
 
-/*
 func BenchmarkNoMatch(b *testing.B) {
 	h := newSync()
 
@@ -434,7 +431,6 @@ func BenchmarkNoMatch(b *testing.B) {
 		h(toURL(url))
 	}
 }
-*/
 
 func toURL(urlStr string) *url.URL {
 	u, _ := url.Parse(urlStr)
