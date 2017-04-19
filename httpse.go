@@ -46,7 +46,7 @@ func newEmpty() *httpse {
 	h := &httpse{
 		log:     golog.LoggerFor("httpse"),
 		stats:   &httpseStats{},
-		statsCh: make(chan *timing),
+		statsCh: make(chan *timing, 100),
 	}
 	go h.readTimings()
 	h.wildcardTargets.Store(radix.New())
