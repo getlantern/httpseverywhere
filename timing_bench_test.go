@@ -1,6 +1,7 @@
 package httpseverywhere
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -46,7 +47,9 @@ func BenchmarkChannel(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < concurrency; i++ {
 		go func() {
-			ch <- &timing{host: "myhost", dur: dur}
+			for j := 0; j < int(math.Ceil(float64(b.N)/concurrency)); j++ {
+				ch <- &timing{host: "myhost", dur: dur}
+			}
 			wg.Done()
 		}()
 	}
@@ -63,7 +66,9 @@ func BenchmarkLock(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < concurrency; i++ {
 		go func() {
-			h.addTimingLocked("myhost", dur)
+			for j := 0; j < int(math.Ceil(float64(b.N)/concurrency)); j++ {
+				h.addTimingLocked("myhost", dur)
+			}
 			wg.Done()
 		}()
 	}
