@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/getlantern/golog"
 )
@@ -82,6 +84,7 @@ func (p *preprocessor) VetRuleSet(rules []byte) (*Ruleset, bool) {
 			p.log.Debugf("Could not compile From rule %v - got error %v", rule.From, err)
 			return nil, false
 		}
+		rule.To = p.normalizeTo(rule.To)
 	}
 
 	for _, e := range ruleset.Exclusion {
@@ -93,4 +96,19 @@ func (p *preprocessor) VetRuleSet(rules []byte) (*Ruleset, bool) {
 	}
 
 	return &ruleset, true
+}
+
+func (p *preprocessor) normalizeTo(to string) string {
+	// Go handles references to matching groups in the replacement text
+	// differently from PCRE. PCRE considers $1xxx to be the first match
+	// followed by xxx, whereas in Go that's considered to be the named group
+	// "$1xxx".
+	// See: https://golang.org/pkg/regexp/#Regexp.Expand
+	normalizedTo := strings.Replace(to, "$1", "${1}", -1)
+	for i := 1; i < 10; i++ {
+		old := "$" + strconv.Itoa(i)
+		new := "${" + strconv.Itoa(i) + "}"
+		normalizedTo = strings.Replace(normalizedTo, old, new, -1)
+	}
+	return normalizedTo
 }

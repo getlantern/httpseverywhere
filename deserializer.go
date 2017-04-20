@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"encoding/gob"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/armon/go-radix"
 	"github.com/getlantern/golog"
 )
 
@@ -82,7 +80,7 @@ func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildc
 		}
 		rsCopy.rule = append(rsCopy.rule, rule{
 			from: from,
-			to:   d.normalizeTo(r.To),
+			to:   r.To,
 		})
 	}
 
@@ -106,19 +104,4 @@ func isPrefixTarget(target *Target) bool {
 
 func isSuffixTarget(target *Target) bool {
 	return strings.HasSuffix(target.Host, "*")
-}
-
-func (d *deserializer) normalizeTo(to string) string {
-	// Go handles references to matching groups in the replacement text
-	// differently from PCRE. PCRE considers $1xxx to be the first match
-	// followed by xxx, whereas in Go that's considered to be the named group
-	// "$1xxx".
-	// See: https://golang.org/pkg/regexp/#Regexp.Expand
-	normalizedTo := strings.Replace(to, "$1", "${1}", -1)
-	for i := 1; i < 10; i++ {
-		old := "$" + strconv.Itoa(i)
-		new := "${" + strconv.Itoa(i) + "}"
-		normalizedTo = strings.Replace(normalizedTo, old, new, -1)
-	}
-	return normalizedTo
 }
