@@ -7,8 +7,6 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"regexp"
-	"strconv"
-	"strings"
 
 	"github.com/getlantern/golog"
 )
@@ -24,7 +22,12 @@ type preprocessor struct {
 
 // Preprocess adds all of the rules in the specified directory.
 func (p *preprocessor) Preprocess(dir string) {
-	//targets := make(map[string]*Targets)
+	p.preprocess(dir, gobrules)
+}
+
+// preprocess adds all of the rules in the specified directory and writes to
+// the specified file.
+func (p *preprocessor) preprocess(dir string, outFile string) {
 	rules := make([]*Ruleset, 0)
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -58,7 +61,7 @@ func (p *preprocessor) Preprocess(dir string) {
 	if err != nil {
 		p.log.Fatalf("encode error: %v", err)
 	}
-	ioutil.WriteFile("rulesets.gob", buf.Bytes(), 0644)
+	ioutil.WriteFile(outFile, buf.Bytes(), 0644)
 }
 
 // VetRuleSet just checks to make sure all the regular expressions compile for
@@ -104,11 +107,6 @@ func (p *preprocessor) normalizeTo(to string) string {
 	// followed by xxx, whereas in Go that's considered to be the named group
 	// "$1xxx".
 	// See: https://golang.org/pkg/regexp/#Regexp.Expand
-	normalizedTo := strings.Replace(to, "$1", "${1}", -1)
-	for i := 1; i < 10; i++ {
-		old := "$" + strconv.Itoa(i)
-		new := "${" + strconv.Itoa(i) + "}"
-		normalizedTo = strings.Replace(normalizedTo, old, new, -1)
-	}
-	return normalizedTo
+	re := regexp.MustCompile("\\$(\\d+)")
+	return re.ReplaceAllString(to, "${$1}")
 }

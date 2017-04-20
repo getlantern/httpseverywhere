@@ -7,8 +7,13 @@ import (
 	"strings"
 	"time"
 
+	radix "github.com/armon/go-radix"
 	"github.com/getlantern/golog"
 )
+
+// Constant for the name of the rulesets serialized in Go's gob encoding and
+// embedded using byte exec
+const gobrules = "rulesets.gob"
 
 type deserializer struct {
 	log golog.Logger
@@ -22,7 +27,7 @@ func newDeserializer() *deserializer {
 
 func (d *deserializer) newRulesets() (map[string]*ruleset, *radix.Tree, error) {
 	start := time.Now()
-	data := MustAsset("rulesets.gob")
+	data := MustAsset(gobrules)
 	buf := bytes.NewBuffer(data)
 
 	dec := gob.NewDecoder(buf)
@@ -37,6 +42,7 @@ func (d *deserializer) newRulesets() (map[string]*ruleset, *radix.Tree, error) {
 	// compile them.
 	plains := make(map[string]*ruleset)
 	wildcards := radix.New()
+
 	for _, rs := range rulesets {
 		d.addRuleset(rs, plains, wildcards)
 	}
@@ -86,10 +92,10 @@ func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildc
 
 	for _, target := range rs.Target {
 		//h.log.Debugf("Adding target host %v", target.Host)
-		if isSuffixTarget(&target) {
+		if isSuffixTarget(target) {
 			//h.log.Debug("Adding suffix target")
 			wildcards.Insert(strings.TrimSuffix(target.Host, "*"), rsCopy)
-		} else if isPrefixTarget(&target) {
+		} else if isPrefixTarget(target) {
 			input := reverse(strings.TrimPrefix(target.Host, "*"))
 			wildcards.Insert(input, rsCopy)
 		} else {
