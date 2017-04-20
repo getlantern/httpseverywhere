@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"encoding/gob"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/armon/go-radix"
+	radix "github.com/armon/go-radix"
 	"github.com/getlantern/golog"
 )
+
+// Constant for the name of the rulesets serialized in Go's gob encoding and
+// embedded using byte exec
+const gobrules = "rulesets.gob"
 
 type deserializer struct {
 	log golog.Logger
@@ -24,7 +27,7 @@ func newDeserializer() *deserializer {
 
 func (d *deserializer) newRulesets() (map[string]*ruleset, *radix.Tree, error) {
 	start := time.Now()
-	data := MustAsset("rulesets.gob")
+	data := MustAsset(gobrules)
 	buf := bytes.NewBuffer(data)
 
 	dec := gob.NewDecoder(buf)
@@ -39,6 +42,7 @@ func (d *deserializer) newRulesets() (map[string]*ruleset, *radix.Tree, error) {
 	// compile them.
 	plains := make(map[string]*ruleset)
 	wildcards := radix.New()
+
 	for _, rs := range rulesets {
 		d.addRuleset(rs, plains, wildcards)
 	}
@@ -82,16 +86,16 @@ func (d *deserializer) addRuleset(rs *Ruleset, plains map[string]*ruleset, wildc
 		}
 		rsCopy.rule = append(rsCopy.rule, rule{
 			from: from,
-			to:   d.normalizeTo(r.To),
+			to:   r.To,
 		})
 	}
 
 	for _, target := range rs.Target {
 		//h.log.Debugf("Adding target host %v", target.Host)
-		if isSuffixTarget(&target) {
+		if isSuffixTarget(target) {
 			//h.log.Debug("Adding suffix target")
 			wildcards.Insert(strings.TrimSuffix(target.Host, "*"), rsCopy)
-		} else if isPrefixTarget(&target) {
+		} else if isPrefixTarget(target) {
 			input := reverse(strings.TrimPrefix(target.Host, "*"))
 			wildcards.Insert(input, rsCopy)
 		} else {
@@ -106,19 +110,4 @@ func isPrefixTarget(target *Target) bool {
 
 func isSuffixTarget(target *Target) bool {
 	return strings.HasSuffix(target.Host, "*")
-}
-
-func (d *deserializer) normalizeTo(to string) string {
-	// Go handles references to matching groups in the replacement text
-	// differently from PCRE. PCRE considers $1xxx to be the first match
-	// followed by xxx, whereas in Go that's considered to be the named group
-	// "$1xxx".
-	// See: https://golang.org/pkg/regexp/#Regexp.Expand
-	normalizedTo := strings.Replace(to, "$1", "${1}", -1)
-	for i := 1; i < 10; i++ {
-		old := "$" + strconv.Itoa(i)
-		new := "${" + strconv.Itoa(i) + "}"
-		normalizedTo = strings.Replace(normalizedTo, old, new, -1)
-	}
-	return normalizedTo
 }

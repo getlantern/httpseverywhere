@@ -22,7 +22,12 @@ type preprocessor struct {
 
 // Preprocess adds all of the rules in the specified directory.
 func (p *preprocessor) Preprocess(dir string) {
-	//targets := make(map[string]*Targets)
+	p.preprocess(dir, gobrules)
+}
+
+// preprocess adds all of the rules in the specified directory and writes to
+// the specified file.
+func (p *preprocessor) preprocess(dir string, outFile string) {
 	rules := make([]*Ruleset, 0)
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -56,7 +61,7 @@ func (p *preprocessor) Preprocess(dir string) {
 	if err != nil {
 		p.log.Fatalf("encode error: %v", err)
 	}
-	ioutil.WriteFile("rulesets.gob", buf.Bytes(), 0644)
+	ioutil.WriteFile(outFile, buf.Bytes(), 0644)
 }
 
 // VetRuleSet just checks to make sure all the regular expressions compile for
@@ -82,6 +87,7 @@ func (p *preprocessor) VetRuleSet(rules []byte) (*Ruleset, bool) {
 			p.log.Debugf("Could not compile From rule %v - got error %v", rule.From, err)
 			return nil, false
 		}
+		rule.To = p.normalizeTo(rule.To)
 	}
 
 	for _, e := range ruleset.Exclusion {
@@ -93,4 +99,14 @@ func (p *preprocessor) VetRuleSet(rules []byte) (*Ruleset, bool) {
 	}
 
 	return &ruleset, true
+}
+
+func (p *preprocessor) normalizeTo(to string) string {
+	// Go handles references to matching groups in the replacement text
+	// differently from PCRE. PCRE considers $1xxx to be the first match
+	// followed by xxx, whereas in Go that's considered to be the named group
+	// "$1xxx".
+	// See: https://golang.org/pkg/regexp/#Regexp.Expand
+	re := regexp.MustCompile("\\$(\\d+)")
+	return re.ReplaceAllString(to, "${$1}")
 }

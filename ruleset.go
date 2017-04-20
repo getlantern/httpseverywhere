@@ -21,11 +21,11 @@ type Rule struct {
 // Ruleset is a set of rules to apply to a set of targets with flags for things
 // like whether or not the set is active, targets, rules, exclusions, etc.
 type Ruleset struct {
-	Off       string      `xml:"default_off,attr"`
-	Platform  string      `xml:"platform,attr"`
-	Target    []Target    `xml:"target"`
-	Exclusion []Exclusion `xml:"exclusion"`
-	Rule      []Rule      `xml:"rule"`
+	Off       string       `xml:"default_off,attr"`
+	Platform  string       `xml:"platform,attr"`
+	Target    []*Target    `xml:"target"`
+	Exclusion []*Exclusion `xml:"exclusion"`
+	Rule      []*Rule      `xml:"rule"`
 }
 
 // The below types are simplified in-memory representations for what we
