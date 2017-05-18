@@ -1,5 +1,5 @@
 # httpseverywhere
-Go implementation of using HTTPS Everywhere rule sets to send traffic over HTTPS.
+Go implementation of using [HTTPS Everywhere](https://github.com/EFForg/https-everywhere) rule sets to send traffic over HTTPS. Many thanks to the EFF team maintaining such an amazing project!
 
 Example usage:
 
