@@ -17,3 +17,5 @@ if changed {
 	...
 }
 ```
+
+Please note that this library does not support any rules that include backtracking, specifically any rules with "(?!" or "(?=", because those are not supported in Go's regular expressions packages for performance reasons.
