@@ -10,7 +10,8 @@ import "github.com/getlantern/httpseverywhere"
 ...
 
 httpURL, _ := url.Parse("http://name.com")
-httpsURL, changed := httpseverywhere.Rewrite(httpURL)
+rewrite := httpseverywhere.Default()
+httpsURL, changed := rewrite(httpURL)
 if changed {
 	// Redirect to httpsURL
 	...
