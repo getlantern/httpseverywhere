@@ -42,6 +42,13 @@ func Default() Rewrite {
 	return h.rewrite
 }
 
+// Eager returns an eagerly-initialized Rewrite using the default rules
+func Eager() Rewrite {
+	h := newEmpty()
+	h.init()
+	return h.rewrite
+}
+
 func newEmpty() *httpse {
 	h := &httpse{
 		log:     golog.LoggerFor("httpse"),
