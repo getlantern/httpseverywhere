@@ -42,11 +42,11 @@ func TestWildcardPrefixFromGob(t *testing.T) {
 
 func TestWildcardPrefixFromGobMultipleSubdomains(t *testing.T) {
 	h := newSync()
-	base := "http://test.history.state.gov"
+	base := "http://test.test.googlevideo.com"
 	r, mod := h(toURL(base))
 
 	assert.True(t, mod)
-	assert.Equal(t, "https://test.history.state.gov", r)
+	assert.Equal(t, "https://test.test.googlevideo.com", r)
 }
 
 func TestGobWildcardSuffix(t *testing.T) {
@@ -381,9 +381,9 @@ func TestCNNConflictingRules(t *testing.T) {
 	assert.False(t, mod)
 }
 
-func TestCNNFull(t *testing.T) {
+func TestMotorTrendFull(t *testing.T) {
 	h := newSync()
-	base := "http://cnn.com/"
+	base := "http://www.motortrend.com/"
 	_, mod := h(toURL(base))
 
 	assert.False(t, mod)
