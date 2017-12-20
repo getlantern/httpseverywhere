@@ -159,6 +159,4 @@ func (h *httpse) addTiming(t *timing) {
 		h.stats.max = ms
 		h.stats.maxHost = t.host
 	}
-	h.log.Debugf("Average running time: %vms", float64(h.stats.totalTime/h.stats.runs))
-	h.log.Debugf("Max running time: %vms for host: %v", h.stats.max, h.stats.maxHost)
 }
