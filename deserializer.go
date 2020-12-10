@@ -27,12 +27,16 @@ func newDeserializer() *deserializer {
 
 func (d *deserializer) newRulesets() (map[string]*ruleset, *radix.Tree, error) {
 	start := time.Now()
-	data := MustAsset(gobrules)
+	data, err := Asset(gobrules)
+	if err != nil {
+		d.log.Errorf("Could not parse assets: %v", err)
+		return nil, nil, err
+	}
 	buf := bytes.NewBuffer(data)
 
 	dec := gob.NewDecoder(buf)
 	rulesets := make([]*Ruleset, 0)
-	err := dec.Decode(&rulesets)
+	err = dec.Decode(&rulesets)
 	if err != nil {
 		d.log.Errorf("Could not decode: %v", err)
 		return nil, nil, err

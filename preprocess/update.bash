@@ -13,5 +13,5 @@ git clone --depth 1 -b release https://github.com/EFForg/https-everywhere.git ||
 go build || die "Could not build"
 ./preprocess || die "Error preprocessing?"
 
-go get -u github.com/jteeuwen/go-bindata/...
+go get -u github.com/getlantern/go-bindata/...
 go-bindata -pkg httpseverywhere -o ../gobrulesets.go ./rulesets.gob

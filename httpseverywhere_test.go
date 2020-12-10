@@ -2,33 +2,67 @@ package httpseverywhere
 
 import (
 	"encoding/xml"
+	"fmt"
+	"net/http"
 	"net/url"
 	"testing"
 
-	"github.com/armon/go-radix"
+	radix "github.com/armon/go-radix"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestNonredirectedSites(t *testing.T) {
+	h := newEmpty()
+	h.init()
+	sets := h.plainTargets.Load().(map[string]*ruleset)
+	i := 0
+	for k, v := range sets {
+		fmt.Printf("%v/%v\n", k, v)
+		i++
+
+		url := "http://" + k
+		//req, err := http.NewRequest("HEAD", url, nil)
+		//req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:47.0) Gecko/20100101 Firefox/47.0")
+
+		client := &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		resp, err := client.Head(url)
+		if err != nil {
+			continue
+		}
+		fmt.Printf("Status for %v: %v\n", url, resp.StatusCode)
+		if resp.StatusCode == 200 {
+			break
+		}
+		if i > 20 {
+			break
+		}
+	}
+}
 
 func TestHTTPSE(t *testing.T) {
 	he := newSync()
 
-	base := "http://www.airbnb.com.au/"
+	base := "http://forms.preston.gov.uk/"
 	r, mod := he(toURL(base))
 
 	assert.True(t, mod)
-	assert.Equal(t, "https://www.airbnb.com.au/", r)
+	assert.Equal(t, "https://forms.preston.gov.uk/", r)
 
-	base = "http://www.airbnb.com.au/"
-	r, mod = he(toURL(base))
-
-	assert.True(t, mod)
-	assert.Equal(t, "https://www.airbnb.com.au/", r)
-
-	base = "http://www.airbnb.comm/"
+	base = "http://forms.preston.gov.ukk/"
 	r, mod = he(toURL(base))
 
 	assert.False(t, mod)
 	assert.Equal(t, "", r)
+
+	base = "http://cdn2.shoptiques.net/"
+	r, mod = he(toURL(base))
+
+	assert.True(t, mod)
+	assert.Equal(t, "https://d2csjd0bj2nauk.cloudfront.net/", r)
 }
 
 func TestWildcardPrefixFromGob(t *testing.T) {
